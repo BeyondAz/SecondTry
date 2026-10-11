@@ -26,6 +26,26 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+The Python runtime loads in the browser the first time you run code. To use
+**Fix my code**, add a Gemini API key to `.env.local`:
+
+```dotenv
+GEMINI_API_KEY=your-gemini-api-key
+```
+
+The key is only used by the server-side `/api/fix` route; never expose it in
+client-side code. `.env.local` is ignored by Git.
+
+## Deploy on Vercel
+
+In the Vercel project settings, clear **Root Directory** completely (no spaces)
+to use the repository root. Add `GEMINI_API_KEY` under **Settings → Environment
+Variables**, then redeploy. Local `.env.local` values are not automatically
+uploaded to Vercel.
+
+The npm deprecation and install-script messages shown during installation are
+warnings. They do not explain a starter page appearing after deployment.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
@@ -35,8 +55,4 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For more details, see the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying).
