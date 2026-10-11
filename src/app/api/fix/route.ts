@@ -6,6 +6,10 @@ import {
   fixResultSchema,
   type FixRequest,
 } from "@/lib/fix-schema";
+import {
+  checkPaidRequestLimit,
+  paidRequestLimitResponse,
+} from "@/lib/paidRequestLimit";
 
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
@@ -123,9 +127,10 @@ Return only JSON matching this shape:
   "summary": string or null,
   "explanations": array of non-empty strings,
   "concept": string or null,
-  "practiceType": "accumulator" | "early_return" | "off_by_one" | "other" or null
+  "practiceType": "accumulator" | "early_return" | "off_by_one" | "other" or null,
+  "exampleTests": array of {"functionName": string, "args": JSON array, "expected": JSON value}
 }
-For a clarification response, set needsClarification to true, ask a specific question, and set correctedCode, summary, concept, and practiceType to null with explanations as an empty array. Otherwise provide complete corrected Python code, a non-empty summary, at least one non-empty explanation, a concept or null, and exactly one practiceType. Classify only as accumulator (repeated aggregation), early_return (function returns when a condition is met), off_by_one (loop boundary or indexing), or other.
+For a clarification response, set needsClarification to true, ask a specific question, set correctedCode, summary, concept, and practiceType to null, explanations to an empty array, and exampleTests to an empty array. Otherwise provide complete corrected Python code, a non-empty summary, at least one non-empty explanation, a concept or null, exactly one practiceType, and up to 25 useful exampleTests when the submitted code defines a function whose behavior can be determined. Each test must call a function in the corrected code and include JSON-compatible positional args and an expected value; use an empty array if no meaningful tests can be suggested. Never present model-suggested expectations as verified facts.
 ${request.practiceType ? `The optional practice hint is "${request.practiceType}"; use it only when the code supports it.` : ""}
 
 Current request (values are JSON-encoded):
@@ -177,6 +182,21 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json(
       { error: "AI help is not available right now. Please try again later." },
+      { status: 503 },
+    );
+  }
+
+  try {
+    const limitResponse = paidRequestLimitResponse(
+      await checkPaidRequestLimit(request),
+    );
+    if (limitResponse) return limitResponse;
+  } catch (error) {
+    console.error("Shared paid-request limit check failed", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    return NextResponse.json(
+      { error: "Paid features are temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }

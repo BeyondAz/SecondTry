@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Keep the nested collaborator snapshot separate from the active root app.
+    "SecondTry-main/**",
     "public/pyodide/**",
   ]),
 ]);

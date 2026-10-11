@@ -22,6 +22,24 @@ question. Suggested corrections include an explanation and practice pattern;
 review them before applying. **Load average example** inserts a broken
 average-score example and its expected behavior into the editor.
 
+Suggested corrections can include optional example tests. Review expected
+values before using AI-suggested examples, then run the original and corrected
+versions in the isolated browser runner to compare their behavior. These
+examples are practice feedback, not proof of correctness. The **Listen**
+controls can generate and replay an audio version of the correction
+explanation through the server-only ElevenLabs integration. **Reset workspace**
+clears unsaved editor and exercise state in the current page; it does not delete
+My Practice history or change the anonymous learner cookie.
+
+Gemini correction and ElevenLabs narration share a limit of 10 requests per IP
+per fixed hour. In development and tests the counter is in memory. Production
+requires `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; without both,
+paid endpoints fail closed with a temporary-unavailable response rather than
+using per-instance limits. Deployments must provide trusted client-IP headers:
+the hosting ingress should overwrite `X-Real-IP` and normalize
+`X-Forwarded-For`. The app hashes the selected address before storing it in
+Redis and does not log it.
+
 The Lessons section contains reviewed exercises for accumulators, early
 returns, and off-by-one errors. Each lesson starts with an output prediction,
 then provides a guided repair, tests, progressive hints, reset, and an
@@ -112,9 +130,19 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 The pinned Pyodide 314.0.7 runtime and its matching assets are served from
-`public/pyodide`. To use **Fix my code**, add a Gemini API key to `.env.local`:
+`public/pyodide`. Copy `.env.example` to `.env.local` and set the server-only
+`GEMINI_API_KEY` to use **Fix my code**. To enable narration locally, also
+configure `ELEVENLABS_API_KEY`; `ELEVENLABS_VOICE_ID` is optional. Set the
+Upstash variables to exercise the shared counter locally; otherwise the
+development server uses its in-memory counter:
 
-
+```dotenv
+GEMINI_API_KEY=your-gemini-key
+ELEVENLABS_API_KEY=your-elevenlabs-key
+ELEVENLABS_VOICE_ID=
+UPSTASH_REDIS_REST_URL=https://your-database.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-upstash-rest-token
+```
 
 The key is only used by the server-side `/api/fix` route; never expose it in
 client-side code. `.env.local` is ignored by Git.
@@ -123,6 +151,10 @@ client-side code. `.env.local` is ignored by Git.
 
 In the Vercel project settings, clear **Root Directory** completely to use the
 repository root. Add `GEMINI_API_KEY` under **Settings → Environment
-Variables**, then redeploy. Local `.env.local` values are not automatically
-uploaded to Vercel. Ensure the deployment includes the repository's
-`public/pyodide` assets.
+Variables**, plus `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` for the shared production rate limit. Add
+`ELEVENLABS_API_KEY` to enable narration and optionally add
+`ELEVENLABS_VOICE_ID`. Local `.env.local` values are not automatically uploaded
+to Vercel. Ensure the deployment includes the repository's `public/pyodide`
+assets and that Vercel-provided client IP headers are available to the
+functions.

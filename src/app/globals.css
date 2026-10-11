@@ -221,6 +221,12 @@ button:disabled {
   font-size: 11px;
 }
 
+.editor-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .editor-wrap {
   min-height: 390px;
   background: #1e2029;
@@ -592,6 +598,19 @@ button:disabled {
   font-size: 11px;
 }
 
+.explanation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.explanation-heading h4 {
+  margin: 0;
+}
+
 .explanation ul {
   display: grid;
   gap: 6px;
@@ -600,6 +619,140 @@ button:disabled {
   color: #59657a;
   font-size: 10px;
   line-height: 1.55;
+}
+
+.narration-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.narration-controls .text-button {
+  font-size: 10px;
+  text-decoration: underline;
+}
+
+.narration-controls .text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  text-decoration: none;
+}
+
+.narration-status {
+  color: #59657a;
+  font-size: 10px;
+}
+
+.example-tests {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.example-tests summary {
+  color: #6b56d5;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.example-test-input {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.expectation-source {
+  margin: 7px 0 0;
+  color: #6b7588;
+  font-size: 10px;
+}
+
+.expectation-source strong {
+  color: #51467d;
+}
+
+.ai-examples-button {
+  margin-top: 9px;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.review-expectations {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  color: #59657a;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.review-expectations input {
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+}
+
+.verify-examples-button {
+  width: 100%;
+  margin-top: 13px;
+  white-space: normal;
+}
+
+.example-case-error {
+  margin: 8px 0 0;
+  color: #9c3b36;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.example-verification {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
+}
+
+.verification-side h4 {
+  margin: 0 0 7px;
+  color: #344057;
+  font-size: 11px;
+}
+
+.example-results-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.example-results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9px;
+  text-align: left;
+}
+
+.example-results th,
+.example-results td {
+  max-width: 180px;
+  border-bottom: 1px solid var(--line);
+  padding: 6px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.example-results th {
+  color: #59657a;
+  font-weight: 700;
+}
+
+.example-results code {
+  font-family: var(--font-mono);
+}
+
+.example-error {
+  color: #9c3b36;
 }
 
 .concept-card {

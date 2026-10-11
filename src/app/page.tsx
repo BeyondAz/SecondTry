@@ -6,7 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import MyPractice from "@/app/MyPractice";
 import {
   createPythonRun,
+  isPythonExampleCases,
   isPythonTestCases,
+  type ExampleExpectationSource,
+  type PythonExampleCase,
+  type PythonResponse,
   type PythonRun,
   type PythonValue,
 } from "@/lib/pythonRunner";
@@ -86,6 +90,258 @@ function WorkspaceHeader() {
   );
 }
 
+function createNarrationAudio(
+  setIsPlaying: (playing: boolean) => void,
+  setError: (message: string) => void,
+) {
+  const audio = new Audio();
+  audio.addEventListener("ended", () => setIsPlaying(false));
+  audio.addEventListener("error", () => {
+    setIsPlaying(false);
+    setError("The generated audio could not be played.");
+  });
+  return audio;
+}
+
+function NarrationControls({ text }: { text: string }) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.src = "";
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    },
+    [],
+  );
+
+  async function playAudio(url: string) {
+    const audio =
+      audioRef.current ?? createNarrationAudio(setIsPlaying, setError);
+    audioRef.current = audio;
+    audio.pause();
+    audio.setAttribute("src", url);
+    audio.load();
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+      setError("Audio playback was blocked. Try pressing Listen again.");
+    }
+  }
+
+  async function listen() {
+    if (isGenerating || !text.trim()) return;
+    setError("");
+    if (audioUrl) {
+      await playAudio(audioUrl);
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsGenerating(true);
+    try {
+      const response = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        const message =
+          body &&
+          typeof body === "object" &&
+          "error" in body &&
+          typeof body.error === "string"
+            ? body.error
+            : "Narration could not be generated right now. Please retry.";
+        throw new Error(message);
+      }
+
+      const url = URL.createObjectURL(await response.blob());
+      if (controller.signal.aborted) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      audioUrlRef.current = url;
+      setAudioUrl(url);
+      await playAudio(url);
+    } catch (caught) {
+      if (!controller.signal.aborted) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Narration could not be generated right now. Please retry.",
+        );
+      }
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsGenerating(false);
+      }
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsGenerating(false);
+    audioRef.current?.pause();
+    audioRef.current?.load();
+    setIsPlaying(false);
+  }
+
+  return (
+    <div className="narration-controls" aria-label="Explanation audio controls">
+      <button
+        className="text-button"
+        onClick={() => void listen()}
+        disabled={isGenerating || !text.trim()}
+      >
+        {isGenerating ? "Loading audio…" : "Listen"}
+      </button>
+      <button
+        className="text-button"
+        onClick={stop}
+        disabled={!isGenerating && !isPlaying}
+      >
+        Stop
+      </button>
+      <button
+        className="text-button"
+        onClick={() => audioUrl && void playAudio(audioUrl)}
+        disabled={!audioUrl || isGenerating}
+      >
+        Replay
+      </button>
+      <span className="narration-status" aria-live="polite">
+        {error || (isPlaying ? "Playing explanation" : "")}
+      </span>
+    </div>
+  );
+}
+
+type ExampleOutcome = {
+  actual: PythonValue | null;
+  hasResult: boolean;
+  error: string | null;
+};
+
+type ExampleSideResult = {
+  status: string;
+  outcomes: ExampleOutcome[];
+};
+
+type ExampleVerification = {
+  cases: PythonExampleCase[];
+  original: ExampleSideResult;
+  corrected: ExampleSideResult;
+};
+
+function stableJson(value: PythonValue): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function makeExampleSideResult(
+  response: PythonResponse,
+  cases: PythonExampleCase[],
+): ExampleSideResult {
+  const outcomes = cases.map((testCase, index) => {
+    const hasResult = index < response.results.length;
+    return {
+      actual: hasResult ? response.results[index] : null,
+      hasResult,
+      error:
+        response.error ??
+        response.testErrors[index] ??
+        (hasResult ? null : "No result was returned for this case."),
+    };
+  });
+
+  if (response.timedOut) {
+    return {
+      status: "Execution timed out",
+      outcomes: outcomes.map((outcome) => ({
+        ...outcome,
+        error: outcome.error ?? "Execution timed out.",
+      })),
+    };
+  }
+  if (response.error || outcomes.some((outcome) => outcome.error)) {
+    return { status: "Execution error", outcomes };
+  }
+  if (
+    outcomes.some(
+      (outcome, index) =>
+        !outcome.hasResult ||
+        stableJson(outcome.actual) !== stableJson(cases[index].expected),
+    )
+  ) {
+    return { status: "Failed an example test", outcomes };
+  }
+  return { status: `Passed ${cases.length} example tests`, outcomes };
+}
+
+function ExampleCaseResults({
+  cases,
+  outcomes,
+}: {
+  cases: PythonExampleCase[];
+  outcomes: ExampleOutcome[];
+}) {
+  return (
+    <div className="example-results-scroll">
+      <table className="example-results">
+        <thead>
+          <tr>
+            <th>Function</th>
+            <th>Arguments</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cases.map((testCase, index) => (
+            <tr key={`${testCase.functionName}-${index}`}>
+              <td><code>{testCase.functionName}</code></td>
+              <td><code>{JSON.stringify(testCase.args)}</code></td>
+              <td><code>{JSON.stringify(testCase.expected)}</code></td>
+              <td>
+                <code>
+                  {outcomes[index]?.hasResult
+                    ? JSON.stringify(outcomes[index].actual)
+                    : "—"}
+                </code>
+              </td>
+              <td className={outcomes[index]?.error ? "example-error" : ""}>
+                {outcomes[index]?.error ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PythonEditor({
   value,
   onChange,
@@ -118,6 +374,14 @@ function PythonEditor({
 export default function Home() {
   const [code, setCode] = useState(starterCode);
   const [testCases, setTestCases] = useState("[]");
+  const [exampleCasesText, setExampleCasesText] = useState("[]");
+  const [expectationSource, setExpectationSource] =
+    useState<ExampleExpectationSource>("user-provided");
+  const [reviewedAiExpectations, setReviewedAiExpectations] = useState(false);
+  const [exampleCaseError, setExampleCaseError] = useState("");
+  const [isVerifyingExamples, setIsVerifyingExamples] = useState(false);
+  const [exampleVerification, setExampleVerification] =
+    useState<ExampleVerification | null>(null);
   const [intendedBehavior, setIntendedBehavior] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [exampleArguments, setExampleArguments] = useState("");
@@ -134,6 +398,8 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingPython, setIsLoadingPython] = useState(false);
   const currentRunRef = useRef<PythonRun | null>(null);
+  const verificationRunRef = useRef<PythonRun | null>(null);
+  const verificationRequestIdRef = useRef(0);
   const activeRunIdRef = useRef("");
 
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
@@ -290,7 +556,21 @@ export default function Home() {
     void savePendingPracticeAttempt(payload.attemptId);
   }
 
+  function clearExampleVerification() {
+    verificationRequestIdRef.current += 1;
+    const activeRun = verificationRunRef.current;
+    verificationRunRef.current = null;
+    activeRun?.stop();
+    setIsVerifyingExamples(false);
+    setExampleVerification(null);
+  }
+
   function clearFixState() {
+    clearExampleVerification();
+    setExampleCasesText("[]");
+    setExpectationSource("user-provided");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
     setFixResult(null);
     setOriginalFixCode("");
     setFixError("");
@@ -326,16 +606,29 @@ export default function Home() {
     setObservedError("");
     setOutput("Preparing the browser Python runtime…");
     const run = createPythonRun(
-      { requestId: runId, code, testCases: cases },
+      {
+        requestId: runId,
+        mode: cases.length > 0 ? "tests" : "script",
+        code,
+        testCases: cases,
+      },
       setIsLoadingPython,
     );
     currentRunRef.current = run;
     try {
       const result = await run.promise;
       if (activeRunIdRef.current !== runId) return;
-      setOutput(result.stdout);
-      setRunError(result.error ?? "");
-      setObservedError(result.error ?? "");
+      setOutput(
+        result.outputTruncated
+          ? `${result.stdout}\n… output truncated …`
+          : result.stdout,
+      );
+      const testError = result.testErrors.find(
+        (testError): testError is string => testError !== null,
+      );
+      const error = result.error ?? (testError ? `Function test error: ${testError}` : "");
+      setRunError(error);
+      setObservedError(error);
     } finally {
       if (activeRunIdRef.current === runId) {
         currentRunRef.current = null;
@@ -361,6 +654,35 @@ export default function Home() {
     setExpectedResult("83.0");
     setErrorMessage("");
     setObservedError("");
+  }
+
+  function resetWorkspace() {
+    stopRun();
+    clearFixState();
+    setIsTesting(false);
+    setIsRunning(false);
+    setIsLoadingPython(false);
+    setCode(starterCode);
+    setTestCases("[]");
+    setIntendedBehavior("");
+    setErrorMessage("");
+    setExampleArguments("");
+    setExpectedResult("");
+    setClarificationAnswer("");
+    setOutput("");
+    setRunError("");
+    setObservedError("");
+    setSelectedLesson(null);
+    setPrediction("");
+    setPredictionSubmitted(false);
+    setPracticeExercise(null);
+    setPracticeCode("");
+    setPracticeAttempts(0);
+    setHintsRevealed(0);
+    setTestFeedback("");
+    setTestOutput("");
+    setPracticeComplete(false);
+    setRecommendedExerciseId(null);
     setOutput("");
     setRunError("");
   }
@@ -377,6 +699,11 @@ export default function Home() {
   }
 
   async function sendFixRequest(values: FixRequest) {
+    clearExampleVerification();
+    setExampleCasesText("[]");
+    setExpectationSource("user-provided");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
     setIsFixing(true);
     setFixError("");
     setFixResult(null);
@@ -420,6 +747,99 @@ export default function Home() {
       exampleArguments: exampleArguments || undefined,
       expectedResult: expectedResult || undefined,
     });
+  }
+
+  async function verifyExamples() {
+    if (
+      !originalFixCode ||
+      !fixResult ||
+      fixResult.needsClarification ||
+      isVerifyingExamples
+    ) {
+      return;
+    }
+    if (expectationSource === "AI-suggested" && !reviewedAiExpectations) {
+      setExampleCaseError(
+        "Review the AI-suggested expected values before using them as test targets.",
+      );
+      return;
+    }
+
+    let parsedCases: unknown;
+    try {
+      parsedCases = JSON.parse(exampleCasesText);
+    } catch {
+      setExampleCaseError("Example tests must be valid JSON.");
+      return;
+    }
+    if (!isPythonExampleCases(parsedCases)) {
+      setExampleCaseError(
+        "Enter 1–25 cases with a functionName, positional args array, and JSON expected value.",
+      );
+      return;
+    }
+
+    const cases = parsedCases;
+    setExampleCaseError("");
+    setExampleVerification(null);
+    setIsVerifyingExamples(true);
+    const verificationId = verificationRequestIdRef.current + 1;
+    verificationRequestIdRef.current = verificationId;
+
+    async function runAgainstExamples(sourceCode: string) {
+      const run = createPythonRun(
+        {
+          requestId: crypto.randomUUID(),
+          mode: "examples",
+          code: sourceCode,
+          testCases: cases.map(({ functionName, args }) => ({
+            functionName,
+            args,
+          })),
+        },
+        () => {},
+      );
+      verificationRunRef.current = run;
+      try {
+        return makeExampleSideResult(await run.promise, cases);
+      } finally {
+        if (verificationRunRef.current === run) {
+          verificationRunRef.current = null;
+        }
+      }
+    }
+
+    try {
+      const original = await runAgainstExamples(originalFixCode);
+      if (verificationRequestIdRef.current !== verificationId) return;
+      const corrected = await runAgainstExamples(fixResult.correctedCode);
+      if (verificationRequestIdRef.current !== verificationId) return;
+      setExampleVerification({ cases, original, corrected });
+    } catch (error) {
+      if (verificationRequestIdRef.current === verificationId) {
+        setExampleCaseError(
+          error instanceof Error
+            ? error.message
+            : "Python could not run these examples.",
+        );
+      }
+    } finally {
+      if (verificationRequestIdRef.current === verificationId) {
+        verificationRunRef.current = null;
+        setIsVerifyingExamples(false);
+      }
+    }
+  }
+
+  function useAiSuggestedExamples() {
+    if (!fixResult || fixResult.needsClarification || !fixResult.exampleTests.length) {
+      return;
+    }
+    setExampleCasesText(JSON.stringify(fixResult.exampleTests, null, 2));
+    setExpectationSource("AI-suggested");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
+    clearExampleVerification();
   }
 
   function answerClarification() {
@@ -478,6 +898,7 @@ export default function Home() {
       const run = createPythonRun(
         {
           requestId: runId,
+          mode: "tests",
           code: practiceCode,
           testCases: exercise.tests.map((test) => ({
             functionName: exercise.functionName,
@@ -489,7 +910,11 @@ export default function Home() {
       currentRunRef.current = run;
       const result = await run.promise;
       if (activeRunIdRef.current !== runId) return;
-      setTestOutput(result.stdout);
+      setTestOutput(
+        result.outputTruncated
+          ? `${result.stdout}\n… output truncated …`
+          : result.stdout,
+      );
       if (result.timedOut) {
         outcome = "timed_out";
         setTestFeedback("Python execution timed out. Adjust the code and try again.");
@@ -497,6 +922,13 @@ export default function Home() {
       } else if (result.error) {
         outcome = "error";
         setTestFeedback(`Python error: ${result.error}`);
+        setPracticeComplete(false);
+      } else if (result.testErrors.some(Boolean)) {
+        outcome = "error";
+        const failedError = result.testErrors.find(
+          (testError): testError is string => testError !== null,
+        );
+        setTestFeedback(`Python error: ${failedError ?? "A test could not run."}`);
         setPracticeComplete(false);
       } else {
         const failed = exercise.tests.findIndex(
@@ -794,12 +1226,21 @@ export default function Home() {
               <div className="panel-heading">
                 <span className="file-label">Pymain.py</span>
                 <span className="python-badge">Python 3</span>
-                <button
-                  className="button button-secondary example-button"
-                  onClick={loadAverageExample}
-                >
-                  Load average example
-                </button>
+                <div className="editor-heading-actions">
+                  <button
+                    className="button button-secondary example-button"
+                    onClick={loadAverageExample}
+                  >
+                    Load average example
+                  </button>
+                  <button
+                    className="button button-secondary example-button"
+                    onClick={resetWorkspace}
+                    title="Reset this page's unsaved editor content and results. Persistent My Practice history is unchanged."
+                  >
+                    Reset workspace
+                  </button>
+                </div>
               </div>
               <div className="editor-wrap">
                 <PythonEditor value={code} onChange={updateCode} />
@@ -994,13 +1435,116 @@ export default function Home() {
                     </div>
                   </details>
                   <div className="explanation">
-                    <h4>What changed</h4>
+                    <div className="explanation-heading">
+                      <h4>What changed</h4>
+                      <NarrationControls
+                        key={`${fixResult.summary}\n${fixResult.explanations.join("\n")}`}
+                        text={[fixResult.summary, ...fixResult.explanations].join("\n")}
+                      />
+                    </div>
                     <ul>
                       {fixResult.explanations.map((explanation) => (
                         <li key={explanation}>{explanation}</li>
                       ))}
                     </ul>
                   </div>
+                  <details className="example-tests">
+                    <summary>Check examples on both versions (optional)</summary>
+                    <p className="example-arguments-hint">
+                      These examples run the original and corrected code locally
+                      in your browser. Function tests skip top-level expression
+                      statements such as demo print calls. They are useful
+                      checks, not proof of correctness.
+                    </p>
+                    <label className="field-label" htmlFor="example-test-cases">
+                      Example tests{" "}
+                      <span className="optional-label">
+                        (JSON array: functionName, args, expected)
+                      </span>
+                    </label>
+                    <textarea
+                      id="example-test-cases"
+                      className="text-field example-test-input"
+                      rows={5}
+                      value={exampleCasesText}
+                      maxLength={20_000}
+                      onChange={(event) => {
+                        setExampleCasesText(event.target.value);
+                        setExpectationSource("user-provided");
+                        setReviewedAiExpectations(false);
+                        setExampleCaseError("");
+                        clearExampleVerification();
+                      }}
+                      placeholder='[{"functionName":"average","args":[[82,91,76]],"expected":83.0}]'
+                      disabled={isVerifyingExamples}
+                    />
+                    <p className="expectation-source">
+                      Expected values: <strong>{expectationSource}</strong>
+                    </p>
+                    {fixResult.exampleTests.length > 0 && (
+                      <button
+                        className="text-button ai-examples-button"
+                        onClick={useAiSuggestedExamples}
+                        disabled={isVerifyingExamples}
+                      >
+                        Use {fixResult.exampleTests.length} AI-suggested
+                        example{fixResult.exampleTests.length === 1 ? "" : "s"}
+                        {" "}(review required)
+                      </button>
+                    )}
+                    {expectationSource === "AI-suggested" && (
+                      <label className="review-expectations">
+                        <input
+                          type="checkbox"
+                          checked={reviewedAiExpectations}
+                          onChange={(event) => {
+                            setReviewedAiExpectations(event.target.checked);
+                            clearExampleVerification();
+                          }}
+                          disabled={isVerifyingExamples}
+                        />
+                        I reviewed the AI-suggested expected values and want to
+                        use them as test targets.
+                      </label>
+                    )}
+                    <button
+                      className="button button-secondary verify-examples-button"
+                      onClick={() => void verifyExamples()}
+                      disabled={
+                        isVerifyingExamples ||
+                        !originalFixCode ||
+                        (expectationSource === "AI-suggested" &&
+                          !reviewedAiExpectations)
+                      }
+                    >
+                      {isVerifyingExamples
+                        ? "Running original and corrected code…"
+                        : "Run examples on both versions"}
+                    </button>
+                    {exampleCaseError && (
+                      <p className="example-case-error" role="alert">
+                        {exampleCaseError}
+                      </p>
+                    )}
+                    {exampleVerification && (
+                      <div className="example-verification" aria-live="polite">
+                        <div className="verification-side">
+                          <h4>Original: {exampleVerification.original.status}</h4>
+                          <ExampleCaseResults
+                            cases={exampleVerification.cases}
+                            outcomes={exampleVerification.original.outcomes}
+                          />
+                        </div>
+                        <div className="verification-side">
+                          <h4>Corrected: {exampleVerification.corrected.status}</h4>
+                          <ExampleCaseResults
+                            cases={exampleVerification.cases}
+                            outcomes={exampleVerification.corrected.outcomes}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </details>
                   {fixResult.concept && (
                     <div className="concept-card">
                       <span className="concept-label">Python concept</span>

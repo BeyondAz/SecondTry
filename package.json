@@ -10,7 +10,9 @@
     "db:status": "node scripts/practice-db-status.mjs",
     "db:migrate:practice": "node scripts/migrate-practice-history.mjs",
     "test:practice": "node --experimental-strip-types --test src/lib/practice-recommendations.test.ts",
-    "test:practice-db": "node scripts/test-practice-db.mjs"
+    "test:practice-db": "node scripts/test-practice-db.mjs",
+    "test:paid-limit": "node --experimental-strip-types --test src/lib/paidRequestLimit.test.ts",
+    "test:runner": "node --experimental-strip-types --test src/lib/pythonRunner.test.ts"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.71.0",

@@ -12,8 +12,20 @@ export type PythonTestCase = {
   kwargs?: { [key: string]: PythonValue };
 };
 
+export type ExampleExpectationSource =
+  | "user-provided"
+  | "reviewed exercise"
+  | "AI-suggested";
+
+export type PythonExampleCase = {
+  functionName: string;
+  args: PythonValue[];
+  expected: PythonValue;
+};
+
 export type PythonRequest = {
   requestId: string;
+  mode: "script" | "tests" | "examples";
   code: string;
   testCases: PythonTestCase[];
 };
@@ -24,6 +36,8 @@ export type PythonResponse = {
   stdout: string;
   error: string | null;
   timedOut: boolean;
+  outputTruncated: boolean;
+  testErrors: (string | null)[];
 };
 
 export type PythonRun = {
@@ -40,7 +54,7 @@ const MAX_VALUE_DEPTH = 10;
 const MAX_COLLECTION_ITEMS = 100;
 const MAX_STRING_LENGTH = 10_000;
 
-function isPythonValue(value: unknown, depth = 0): value is PythonValue {
+export function isPythonValue(value: unknown, depth = 0): value is PythonValue {
   if (depth > MAX_VALUE_DEPTH) return false;
   if (
     value === null ||
@@ -68,11 +82,40 @@ function isPythonValue(value: unknown, depth = 0): value is PythonValue {
   );
 }
 
+export function isPythonExampleCases(
+  value: unknown,
+): value is PythonExampleCase[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= MAX_TEST_CASES &&
+    value.every((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const testCase = item as Record<string, unknown>;
+      return (
+        Object.keys(testCase).every((key) =>
+          ["functionName", "args", "expected"].includes(key),
+        ) &&
+        typeof testCase.functionName === "string" &&
+        testCase.functionName.length <= 100 &&
+        /^[A-Za-z_]\w*$/.test(testCase.functionName) &&
+        Array.isArray(testCase.args) &&
+        testCase.args.length <= MAX_COLLECTION_ITEMS &&
+        testCase.args.every((arg) => isPythonValue(arg)) &&
+        isPythonValue(testCase.expected)
+      );
+    })
+  );
+}
+
 function isPythonTestCase(value: unknown): value is PythonTestCase {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 
   const testCase = value as Record<string, unknown>;
   return (
+    Object.keys(testCase).every((key) =>
+      ["functionName", "args", "kwargs"].includes(key),
+    ) &&
     typeof testCase.functionName === "string" &&
     testCase.functionName.length <= 100 &&
     /^[A-Za-z_]\w*$/.test(testCase.functionName) &&
@@ -96,11 +139,23 @@ export function isPythonTestCases(value: unknown): value is PythonTestCase[] {
 }
 
 function isPythonResponse(value: unknown): value is PythonResponse {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 
   const response = value as Record<string, unknown>;
   return (
+    Object.keys(response).every((key) =>
+      [
+        "requestId",
+        "results",
+        "stdout",
+        "error",
+        "timedOut",
+        "outputTruncated",
+        "testErrors",
+      ].includes(key),
+    ) &&
     typeof response.requestId === "string" &&
+    /^[\w.-]{1,100}$/.test(response.requestId) &&
     Array.isArray(response.results) &&
     response.results.length <= MAX_TEST_CASES &&
     response.results.every((result) => isPythonValue(result)) &&
@@ -109,20 +164,46 @@ function isPythonResponse(value: unknown): value is PythonResponse {
     (response.error === null ||
       (typeof response.error === "string" &&
         response.error.length <= OUTPUT_LIMIT)) &&
-    typeof response.timedOut === "boolean"
+    typeof response.timedOut === "boolean" &&
+    typeof response.outputTruncated === "boolean" &&
+    Array.isArray(response.testErrors) &&
+    response.testErrors.length === response.results.length &&
+    response.testErrors.length <= MAX_TEST_CASES &&
+    response.testErrors.every(
+      (error) =>
+        error === null ||
+        (typeof error === "string" && error.length <= OUTPUT_LIMIT),
+    ) &&
+    response.stdout.length +
+      (response.error?.length ?? 0) +
+      response.testErrors.reduce(
+        (total, error) => total + (error?.length ?? 0),
+        0,
+      ) <=
+      OUTPUT_LIMIT &&
+    JSON.stringify(response.results).length <= OUTPUT_LIMIT
   );
 }
 
 function isRequest(value: unknown): value is PythonRequest {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 
   const request = value as Record<string, unknown>;
   return (
+    Object.keys(request).every((key) =>
+      ["requestId", "mode", "code", "testCases"].includes(key),
+    ) &&
     typeof request.requestId === "string" &&
     /^[\w.-]{1,100}$/.test(request.requestId) &&
+    (request.mode === "script" ||
+      request.mode === "tests" ||
+      request.mode === "examples") &&
     typeof request.code === "string" &&
     request.code.length <= MAX_CODE_LENGTH &&
-    isPythonTestCases(request.testCases)
+    isPythonTestCases(request.testCases) &&
+    (request.mode === "script"
+      ? request.testCases.length === 0
+      : request.testCases.length > 0)
   );
 }
 
@@ -145,11 +226,15 @@ function validValue(value, depth = 0) {
 }
 
 function validRequest(value) {
-  return value && typeof value === "object" &&
+  return value && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).every(key => ["requestId", "mode", "code", "testCases"].includes(key)) &&
     typeof value.requestId === "string" && /^[\\w.-]{1,100}$/.test(value.requestId) &&
+    (value.mode === "script" || value.mode === "tests" || value.mode === "examples") &&
     typeof value.code === "string" && value.code.length <= ${MAX_CODE_LENGTH} &&
     Array.isArray(value.testCases) && value.testCases.length <= ${MAX_TEST_CASES} &&
-    value.testCases.every(testCase => testCase && typeof testCase === "object" &&
+    (value.mode === "script" ? value.testCases.length === 0 : value.testCases.length > 0) &&
+    value.testCases.every(testCase => testCase && typeof testCase === "object" && !Array.isArray(testCase) &&
+      Object.keys(testCase).every(key => ["functionName", "args", "kwargs"].includes(key)) &&
       typeof testCase.functionName === "string" && testCase.functionName.length <= 100 && /^[A-Za-z_]\\w*$/.test(testCase.functionName) &&
       Array.isArray(testCase.args) && testCase.args.length <= ${MAX_COLLECTION_ITEMS} &&
       testCase.args.every(item => validValue(item)) &&
@@ -167,17 +252,33 @@ function capture(text) {
   if (text.length > remaining) outputTruncated = true;
 }
 
-function response(requestId, results, error) {
-  const marker = "\\n… output truncated …";
-  const captured = outputTruncated
-    ? stdout.slice(0, Math.max(0, OUTPUT_LIMIT - marker.length)) + marker
-    : stdout;
+function response(requestId, results, error, testErrors = []) {
+  let responseStdout = stdout.slice(0, OUTPUT_LIMIT);
+  let responseError = error ? String(error) : null;
+  if (responseError !== null && responseStdout.length + responseError.length > OUTPUT_LIMIT) {
+    responseError = responseError.slice(0, OUTPUT_LIMIT);
+    responseStdout = responseStdout.slice(0, OUTPUT_LIMIT - responseError.length);
+    outputTruncated = true;
+  }
+  let errorBudget = Math.max(
+    0,
+    OUTPUT_LIMIT - responseStdout.length - (responseError?.length || 0),
+  );
+  const boundedErrors = testErrors.map(item => {
+    if (item === null) return null;
+    const bounded = String(item).slice(0, errorBudget);
+    errorBudget -= bounded.length;
+    if (bounded.length < String(item).length) outputTruncated = true;
+    return bounded;
+  });
   self.postMessage({
     requestId,
     results,
-    stdout: captured,
-    error: error ? String(error).slice(0, OUTPUT_LIMIT) : null,
-    timedOut: false
+    stdout: responseStdout,
+    error: responseError,
+    timedOut: false,
+    outputTruncated,
+    testErrors: boundedErrors
   });
 }
 
@@ -206,15 +307,27 @@ self.onmessage = async event => {
         pyodide.setStdout({ batched: text => capture(text + "\\n") });
         pyodide.setStderr({ batched: text => capture(text + "\\n") });
         pyodide.globals.set("__pyspace_code", request.code);
+        pyodide.globals.set("__pyspace_mode", request.mode);
         pyodide.globals.set("__pyspace_cases", JSON.stringify(request.testCases));
         const rawResults = await pyodide.runPythonAsync(\`
+import ast
 import json
 import math
 
 __pyspace_namespace = {}
-exec(compile(__pyspace_code, "<user code>", "exec"), __pyspace_namespace, __pyspace_namespace)
+if __pyspace_mode == "examples":
+    __pyspace_tree = ast.parse(__pyspace_code, filename="<user code>")
+    __pyspace_tree.body = [
+        __pyspace_node for __pyspace_node in __pyspace_tree.body
+        if not isinstance(__pyspace_node, ast.Expr)
+    ]
+    __pyspace_namespace["__name__"] = "__pyspace_tests__"
+    exec(compile(__pyspace_tree, "<user code>", "exec"), __pyspace_namespace, __pyspace_namespace)
+else:
+    exec(compile(__pyspace_code, "<user code>", "exec"), __pyspace_namespace, __pyspace_namespace)
 __pyspace_parsed_cases = json.loads(__pyspace_cases)
 __pyspace_results = []
+__pyspace_errors = []
 
 def __pyspace_to_json(value, depth=0):
     if depth > 10:
@@ -239,17 +352,51 @@ def __pyspace_to_json(value, depth=0):
     return repr(value)[:1000]
 
 for __pyspace_case in __pyspace_parsed_cases:
-    __pyspace_function = __pyspace_namespace.get(__pyspace_case["functionName"])
-    if not callable(__pyspace_function):
-        raise TypeError("Function '" + __pyspace_case["functionName"] + "' is not defined or is not callable.")
-    __pyspace_result = __pyspace_function(*__pyspace_case["args"], **__pyspace_case.get("kwargs", {}))
-    __pyspace_results.append(__pyspace_to_json(__pyspace_result))
+    try:
+        __pyspace_function = __pyspace_namespace.get(__pyspace_case["functionName"])
+        if not callable(__pyspace_function):
+            raise TypeError("Function '" + __pyspace_case["functionName"] + "' is not defined or is not callable.")
+        __pyspace_result = __pyspace_function(*__pyspace_case["args"], **__pyspace_case.get("kwargs", {}))
+        __pyspace_results.append(__pyspace_to_json(__pyspace_result))
+        __pyspace_errors.append(None)
+    except Exception as __pyspace_error:
+        __pyspace_results.append(None)
+        __pyspace_errors.append(type(__pyspace_error).__name__ + ": " + str(__pyspace_error))
 
-json.dumps(__pyspace_results, allow_nan=False)
+json.dumps({"results": __pyspace_results, "errors": __pyspace_errors}, allow_nan=False)
 \`);
         const resultJson = typeof rawResults === "string" ? rawResults : rawResults.toString();
         if (rawResults && typeof rawResults.destroy === "function") rawResults.destroy();
-        response(request.requestId, JSON.parse(resultJson), null);
+        const parsedResponse = JSON.parse(resultJson);
+        const resultErrors = parsedResponse.errors;
+        let errorBudget = Math.max(0, OUTPUT_LIMIT - stdout.length);
+        const boundedErrors = resultErrors.map(error => {
+          if (error === null) return null;
+          const boundedError = error.slice(0, errorBudget);
+          errorBudget -= boundedError.length;
+          if (boundedError.length < error.length) outputTruncated = true;
+          return boundedError;
+        });
+        const resultBudget = Math.max(
+          0,
+          OUTPUT_LIMIT - stdout.length -
+            boundedErrors.reduce((total, error) => total + (error ? error.length : 0), 0) - 10
+        );
+        const boundedResults = [];
+        for (const result of parsedResponse.results) {
+          if (JSON.stringify([...boundedResults, result]).length > resultBudget) {
+            outputTruncated = true;
+            break;
+          }
+          boundedResults.push(result);
+        }
+        if (boundedResults.length < parsedResponse.results.length) outputTruncated = true;
+        response(
+          request.requestId,
+          boundedResults,
+          null,
+          boundedErrors.slice(0, boundedResults.length),
+        );
       } catch (error) {
         response(request.requestId, [], error instanceof Error ? error.message : error);
       }
@@ -299,7 +446,15 @@ export function createPythonRun(
     stdout: string,
     error: string | null,
     timedOut = false,
-  ): PythonResponse => ({ requestId: request.requestId, results, stdout, error, timedOut });
+  ): PythonResponse => ({
+    requestId: request.requestId,
+    results,
+    stdout,
+    error,
+    timedOut,
+    outputTruncated: false,
+    testErrors: [],
+  });
 
   const handleMessage = (event: MessageEvent<unknown>) => {
     if (
@@ -360,11 +515,15 @@ export function createPythonRun(
       }
 
       function validRequest(value) {
-        return value && typeof value === "object" &&
+        return value && typeof value === "object" && !Array.isArray(value) &&
+          Object.keys(value).every(key => ["requestId", "mode", "code", "testCases"].includes(key)) &&
           typeof value.requestId === "string" && /^[\\w.-]{1,100}$/.test(value.requestId) &&
+          (value.mode === "script" || value.mode === "tests" || value.mode === "examples") &&
           typeof value.code === "string" && value.code.length <= ${MAX_CODE_LENGTH} &&
           Array.isArray(value.testCases) && value.testCases.length <= ${MAX_TEST_CASES} &&
-          value.testCases.every(testCase => testCase && typeof testCase === "object" &&
+          (value.mode === "script" ? value.testCases.length === 0 : value.testCases.length > 0) &&
+          value.testCases.every(testCase => testCase && typeof testCase === "object" && !Array.isArray(testCase) &&
+            Object.keys(testCase).every(key => ["functionName", "args", "kwargs"].includes(key)) &&
             typeof testCase.functionName === "string" && testCase.functionName.length <= 100 && /^[A-Za-z_]\\w*$/.test(testCase.functionName) &&
             Array.isArray(testCase.args) && testCase.args.length <= ${MAX_COLLECTION_ITEMS} &&
             testCase.args.every(item => validValue(item)) &&
@@ -404,7 +563,15 @@ export function createPythonRun(
                 typeof response.stdout === "string" && response.stdout.length <= ${OUTPUT_LIMIT + 100} &&
                 (response.error === null ||
                   (typeof response.error === "string" && response.error.length <= ${OUTPUT_LIMIT})) &&
-                response.timedOut === false) {
+                response.timedOut === false &&
+                typeof response.outputTruncated === "boolean" &&
+                Array.isArray(response.testErrors) &&
+                response.testErrors.length === response.results.length &&
+                response.testErrors.every(error =>
+                  error === null || (typeof error === "string" && error.length <= ${OUTPUT_LIMIT})) &&
+                response.stdout.length + (response.error?.length ?? 0) +
+                  response.testErrors.reduce((total, error) => total + (error?.length ?? 0), 0) <= ${OUTPUT_LIMIT} &&
+                JSON.stringify(response.results).length <= ${OUTPUT_LIMIT}) {
               send({ type: "response", requestId, response });
               destroyWorker();
             }
@@ -414,7 +581,9 @@ export function createPythonRun(
             send({ type: "response", requestId, response: {
               requestId, results: [], stdout: "",
               error: "The Python worker failed to start: " + event.message,
-              timedOut: false
+              timedOut: false,
+              outputTruncated: false,
+              testErrors: []
             }});
             destroyWorker();
           };
@@ -436,7 +605,21 @@ export function createPythonRun(
   iframe!.tabIndex = -1;
   iframe!.style.cssText =
     "position:fixed;width:0;height:0;border:0;visibility:hidden;pointer-events:none";
-  iframe!.srcdoc = `<!doctype html><meta charset="utf-8"><script>${iframeBootstrap}<\/script>`;
+  const parentOrigin = window.location.origin;
+  const sandboxPolicy = [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "img-src 'none'",
+    "media-src 'none'",
+    "object-src 'none'",
+    "style-src 'unsafe-inline'",
+    `script-src 'unsafe-inline' 'wasm-unsafe-eval' data: ${parentOrigin}/pyodide/`,
+    `connect-src ${parentOrigin}/pyodide/`,
+    "worker-src data:",
+  ].join("; ");
+  iframe!.srcdoc = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${sandboxPolicy}"><script>${iframeBootstrap}<\/script>`;
   window.addEventListener("message", handleMessage);
   onLoading(true);
   iframe!.addEventListener("load", () => {

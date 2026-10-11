@@ -7,6 +7,14 @@ export const practiceTypeSchema = z.enum([
   "other",
 ]);
 
+const suggestedExampleTestSchema = z
+  .object({
+    functionName: z.string().regex(/^[A-Za-z_]\w*$/).max(100),
+    args: z.array(z.json()).max(100),
+    expected: z.json(),
+  })
+  .strict();
+
 export const fixRequestSchema = z
   .object({
     code: z.string().trim().min(1).max(20_000),
@@ -30,6 +38,7 @@ export const fixResultSchema = z.discriminatedUnion("needsClarification", [
       explanations: z.array(z.string()),
       concept: z.null(),
       practiceType: z.null(),
+      exampleTests: z.array(suggestedExampleTestSchema).max(25).default([]),
     })
     .strict(),
   z
@@ -41,6 +50,7 @@ export const fixResultSchema = z.discriminatedUnion("needsClarification", [
       explanations: z.array(z.string().trim().min(1)).min(1),
       concept: z.string().trim().min(1).nullable(),
       practiceType: practiceTypeSchema,
+      exampleTests: z.array(suggestedExampleTestSchema).max(25).default([]),
     })
     .strict(),
 ]);
