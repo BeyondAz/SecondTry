@@ -231,6 +231,43 @@ button:disabled {
   background: #20232d;
 }
 
+<<<<<<< HEAD
+=======
+.test-case-settings {
+  border-top: 1px solid #343743;
+  padding: 12px 15px;
+  background: #20232d;
+  color: #d8e3ee;
+}
+
+.test-case-settings summary {
+  color: #c5cbd7;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.test-case-settings p {
+  margin: 10px 0 8px;
+  color: #9ca4b4;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.test-case-input {
+  display: block;
+  resize: vertical;
+  background: #1b1d25;
+  color: #d8e3ee;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.test-case-input:focus {
+  border-color: #9687ed;
+}
+
+>>>>>>> 8b37a61 (10:48)
 .editor-note {
   margin: 0;
   color: #9ca4b4;
@@ -249,6 +286,19 @@ button:disabled {
   color: #fff;
 }
 
+<<<<<<< HEAD
+=======
+.button-stop {
+  min-height: 36px;
+  background: #a53e48;
+  color: #fff;
+}
+
+.button-stop:hover:not(:disabled) {
+  background: #89313a;
+}
+
+>>>>>>> 8b37a61 (10:48)
 .button-run:hover:not(:disabled),
 .button-fix:hover:not(:disabled) {
   background: var(--purple-dark);
@@ -321,6 +371,19 @@ button:disabled {
   line-height: 1.65;
 }
 
+<<<<<<< HEAD
+=======
+.supported-scope {
+  margin: -8px 0 18px;
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: #f5f3ff;
+  color: #5d5680;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+>>>>>>> 8b37a61 (10:48)
 .field-label {
   display: block;
   margin: 0 0 8px;
@@ -329,6 +392,26 @@ button:disabled {
   font-weight: 700;
 }
 
+<<<<<<< HEAD
+=======
+.field-spaced {
+  margin-top: 15px;
+}
+
+.optional-label {
+  color: #858fa2;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.field-limit {
+  margin: 5px 0 15px;
+  color: #8992a2;
+  font-size: 9px;
+  text-align: right;
+}
+
+>>>>>>> 8b37a61 (10:48)
 .text-field {
   width: 100%;
   resize: vertical;
@@ -452,6 +535,52 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+<<<<<<< HEAD
+=======
+.code-diff {
+  max-height: 300px;
+  overflow: auto;
+  margin: 10px 0 15px;
+  border: 1px solid #2e3340;
+  border-radius: 8px;
+  padding: 10px 0;
+  background: #20232d;
+  color: #d8e3ee;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.diff-line {
+  display: block;
+  min-height: 1.7em;
+  padding: 0 10px;
+}
+
+.diff-marker {
+  display: inline-block;
+  width: 18px;
+  user-select: none;
+}
+
+.diff-added {
+  background: #173c2e;
+  color: #a6efc7;
+}
+
+.diff-removed {
+  background: #4a252b;
+  color: #ffb3b3;
+}
+
+.edit-submission-button {
+  display: block;
+  margin: 12px auto 0;
+  text-decoration: underline;
+}
+
+>>>>>>> 8b37a61 (10:48)
 .code-comparison {
   margin: 4px 0 14px;
 }
