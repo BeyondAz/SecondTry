@@ -52,6 +52,40 @@ if (!pool) {
       await pool.query(occurrenceSql);
       console.log("Practice history migration 002 applied.");
     }
+
+    const paidCounterState = await pool.query(
+      `SELECT
+         to_regclass('second_try.paid_request_counters') IS NOT NULL AS counter_table,
+         to_regclass('second_try.paid_request_counters_expires_at_idx') IS NOT NULL AS expiration_index,
+         (
+           SELECT count(*) = 4
+           FROM information_schema.columns
+           WHERE table_schema = 'second_try'
+             AND table_name = 'paid_request_counters'
+             AND column_name IN (
+               'address_hash',
+               'window_start',
+               'request_count',
+               'expires_at'
+             )
+         ) AS counter_columns`,
+    );
+    const paidCounters = paidCounterState.rows[0];
+    if (paidCounters.counter_table) {
+      if (!paidCounters.counter_columns || !paidCounters.expiration_index) {
+        throw new Error(
+          "Paid-request counter schema is partial; inspect it before migration.",
+        );
+      }
+      console.log("Practice history migrations 001–003 are already applied; no changes made.");
+    } else {
+      const paidCounterSql = await readFile(
+        resolve("db/migrations/003_paid_request_counters.sql"),
+        "utf8",
+      );
+      await pool.query(paidCounterSql);
+      console.log("Practice history migration 003 applied.");
+    }
   } catch {
     console.error("Practice history migration failed; connection details withheld.");
     process.exitCode = 1;

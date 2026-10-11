@@ -19,7 +19,21 @@ if (!pool) {
              AND column_name = 'occurred_at'
          ) AS occurrence_column,
          to_regclass('second_try.attempts_learner_occurrence_idx') IS NOT NULL AS occurrence_index,
-         to_regclass('second_try.attempts_learner_concept_occurrence_idx') IS NOT NULL AS concept_occurrence_index`,
+         to_regclass('second_try.attempts_learner_concept_occurrence_idx') IS NOT NULL AS concept_occurrence_index,
+         to_regclass('second_try.paid_request_counters') IS NOT NULL AS paid_counter_table,
+         to_regclass('second_try.paid_request_counters_expires_at_idx') IS NOT NULL AS paid_counter_expiration_index,
+         (
+           SELECT count(*) = 4
+           FROM information_schema.columns
+           WHERE table_schema = 'second_try'
+             AND table_name = 'paid_request_counters'
+             AND column_name IN (
+               'address_hash',
+               'window_start',
+               'request_count',
+               'expires_at'
+             )
+         ) AS paid_counter_columns`,
     );
     const tables = result.rows[0];
     const baseApplied =
@@ -29,14 +43,20 @@ if (!pool) {
       tables.occurrence_column &&
       tables.occurrence_index &&
       tables.concept_occurrence_index;
+    const paidCounterMigrationApplied =
+      tables.paid_counter_table &&
+      tables.paid_counter_columns &&
+      tables.paid_counter_expiration_index;
     console.log(
-      applied
-        ? "Practice history migrations 001 and 002 are applied."
-        : baseApplied
-          ? "Practice history migration 002 is not applied; run npm run db:migrate:practice after reviewing the schema."
-          : "Practice history base schema is incomplete or not applied; review before migration.",
+      applied && paidCounterMigrationApplied
+        ? "Practice history migrations 001 and 002 and paid-request limiter migration 003 are applied."
+        : baseApplied && applied
+          ? "Paid-request limiter migration 003 is not applied; run npm run db:migrate:practice after reviewing the schema."
+          : baseApplied
+            ? "Practice history migration 002 is not applied; run npm run db:migrate:practice after reviewing the schema."
+            : "Practice history base schema is incomplete or not applied; review before migration.",
     );
-    if (!applied) process.exitCode = 2;
+    if (!applied || !paidCounterMigrationApplied) process.exitCode = 2;
   } catch {
     console.error("Could not check practice tables; connection details withheld.");
     process.exitCode = 1;

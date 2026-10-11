@@ -4,7 +4,7 @@ import pg from "pg";
 const require = createRequire(import.meta.url);
 require("@next/env").loadEnvConfig(process.cwd());
 
-export function getPracticeDbConfig() {
+export function getPracticeDbConfig({ max = 1 } = {}) {
   const configuredUrl = process.env.DATABASE_URL;
   if (!configuredUrl) return null;
 
@@ -28,7 +28,7 @@ export function getPracticeDbConfig() {
   return {
     connectionString: url.toString(),
     ssl: { rejectUnauthorized: true, ...(ca ? { ca } : {}) },
-    max: 1,
+    max: Number.isInteger(max) && max >= 1 && max <= 10 ? max : 1,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 5_000,
     query_timeout: 8_000,
@@ -37,8 +37,8 @@ export function getPracticeDbConfig() {
   };
 }
 
-export function createPracticePool() {
-  const config = getPracticeDbConfig();
+export function createPracticePool(options) {
+  const config = getPracticeDbConfig(options);
   if (!config) return null;
   try {
     return new pg.Pool(config);

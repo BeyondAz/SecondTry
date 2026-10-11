@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   checkPaidRequestLimit,
-  paidRequestLimitResponse,
+  withPaidRequestLimit,
 } from "@/lib/paidRequestLimit";
 
 const requestSchema = z
@@ -84,87 +84,74 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const limitResponse = paidRequestLimitResponse(
-      await checkPaidRequestLimit(request),
-    );
-    if (limitResponse) return limitResponse;
-  } catch (error) {
-    console.error("Shared paid-request limit check failed", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
-    return NextResponse.json(
-      { error: "Paid features are temporarily unavailable. Please try again later." },
-      { status: 503 },
-    );
-  }
-
-  try {
-    const voiceId = encodeURIComponent(
-      process.env.ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID,
-    );
-    const audioResponse = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": apiKey,
+  return withPaidRequestLimit(request, async () => {
+    try {
+      const voiceId = encodeURIComponent(
+        process.env.ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID,
+      );
+      const audioResponse = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            text: parsed.data.text,
+            model_id: "eleven_multilingual_v2",
+          }),
+          cache: "no-store",
+          signal: AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(30_000),
+          ]),
         },
-        body: JSON.stringify({
-          text: parsed.data.text,
-          model_id: "eleven_multilingual_v2",
-        }),
-        cache: "no-store",
-        signal: AbortSignal.any([
-          request.signal,
-          AbortSignal.timeout(30_000),
-        ]),
-      },
-    );
+      );
 
-    if (!audioResponse.ok) {
-      const category =
-        audioResponse.status === 401 || audioResponse.status === 403
-          ? "authentication"
-          : audioResponse.status === 429
-            ? "quota"
-            : audioResponse.status >= 500
-              ? "upstream"
-              : "request";
-      console.error("ElevenLabs narration request failed", {
-        category,
-        upstreamStatus: audioResponse.status,
+      if (!audioResponse.ok) {
+        const category =
+          audioResponse.status === 401 || audioResponse.status === 403
+            ? "authentication"
+            : audioResponse.status === 429
+              ? "quota"
+              : audioResponse.status >= 500
+                ? "upstream"
+                : "request";
+        console.error("ElevenLabs narration request failed", {
+          category,
+          upstreamStatus: audioResponse.status,
+        });
+        const message =
+          category === "quota"
+            ? "Narration is temporarily unavailable because the provider usage limit was reached."
+            : category === "authentication"
+              ? "Narration is temporarily unavailable. Please contact the app owner."
+              : "Narration could not be generated right now. Please retry.";
+        return NextResponse.json(
+          { error: message },
+          { status: category === "quota" ? 429 : 502 },
+        );
+      }
+      if (!audioResponse.body) {
+        throw new Error("Narration provider returned no audio stream.");
+      }
+
+      return new NextResponse(audioResponse.body, {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
       });
-      const message =
-        category === "quota"
-          ? "Narration is temporarily unavailable because the provider usage limit was reached."
-          : category === "authentication"
-            ? "Narration is temporarily unavailable. Please contact the app owner."
-            : "Narration could not be generated right now. Please retry.";
+    } catch (error) {
+      console.error("ElevenLabs narration request failed", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
       return NextResponse.json(
-        { error: message },
-        { status: category === "quota" ? 429 : 502 },
+        { error: "Narration could not be generated right now. Please retry." },
+        { status: 502 },
       );
     }
-    if (!audioResponse.body) {
-      throw new Error("Narration provider returned no audio stream.");
-    }
-
-    return new NextResponse(audioResponse.body, {
-      headers: {
-        "Content-Type": "audio/mpeg",
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
-  } catch (error) {
-    console.error("ElevenLabs narration request failed", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
-    return NextResponse.json(
-      { error: "Narration could not be generated right now. Please retry." },
-      { status: 502 },
-    );
-  }
+  }, checkPaidRequestLimit);
 }

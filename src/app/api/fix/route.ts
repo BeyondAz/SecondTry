@@ -8,7 +8,7 @@ import {
 } from "@/lib/fix-schema";
 import {
   checkPaidRequestLimit,
-  paidRequestLimitResponse,
+  withPaidRequestLimit,
 } from "@/lib/paidRequestLimit";
 
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -186,54 +186,41 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const limitResponse = paidRequestLimitResponse(
-      await checkPaidRequestLimit(request),
-    );
-    if (limitResponse) return limitResponse;
-  } catch (error) {
-    console.error("Shared paid-request limit check failed", {
-      errorType: error instanceof Error ? error.name : "UnknownError",
-    });
-    return NextResponse.json(
-      { error: "Paid features are temporarily unavailable. Please try again later." },
-      { status: 503 },
-    );
-  }
+  return withPaidRequestLimit(request, async () => {
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 4 },
+        },
+      });
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: buildPrompt(values, exampleArguments, expectedResult),
+        config: { responseMimeType: "application/json" },
+      });
+      if (!response.text) throw new ModelResponseError("Empty response.");
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 4 },
-      },
-    });
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: buildPrompt(values, exampleArguments, expectedResult),
-      config: { responseMimeType: "application/json" },
-    });
-    if (!response.text) throw new ModelResponseError("Empty response.");
-
-    return NextResponse.json(parseModelResponse(response.text));
-  } catch (error) {
-    const failure = classifyFailure(error);
-    console.error("Gemini code-fix request failed", {
-      category: failure.category,
-      errorType:
-        error instanceof ApiError
-          ? "ApiError"
-          : error instanceof z.ZodError
-            ? "ZodError"
-            : error instanceof ModelResponseError
-              ? "ModelResponseError"
-              : error instanceof SyntaxError
-                ? "SyntaxError"
-                : error instanceof Error
-                  ? "Error"
-                  : "UnknownError",
-      ...(error instanceof ApiError ? { upstreamStatus: error.status } : {}),
-    });
-    return NextResponse.json({ error: failure.message }, { status: failure.status });
-  }
+      return NextResponse.json(parseModelResponse(response.text));
+    } catch (error) {
+      const failure = classifyFailure(error);
+      console.error("Gemini code-fix request failed", {
+        category: failure.category,
+        errorType:
+          error instanceof ApiError
+            ? "ApiError"
+            : error instanceof z.ZodError
+              ? "ZodError"
+              : error instanceof ModelResponseError
+                ? "ModelResponseError"
+                : error instanceof SyntaxError
+                  ? "SyntaxError"
+                  : error instanceof Error
+                    ? "Error"
+                    : "UnknownError",
+        ...(error instanceof ApiError ? { upstreamStatus: error.status } : {}),
+      });
+      return NextResponse.json({ error: failure.message }, { status: failure.status });
+    }
+  }, checkPaidRequestLimit);
 }

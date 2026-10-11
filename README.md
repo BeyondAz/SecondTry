@@ -31,14 +31,21 @@ explanation through the server-only ElevenLabs integration. **Reset workspace**
 clears unsaved editor and exercise state in the current page; it does not delete
 My Practice history or change the anonymous learner cookie.
 
-Gemini correction and ElevenLabs narration share a limit of 10 requests per IP
-per fixed hour. In development and tests the counter is in memory. Production
-requires `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; without both,
-paid endpoints fail closed with a temporary-unavailable response rather than
-using per-instance limits. Deployments must provide trusted client-IP headers:
-the hosting ingress should overwrite `X-Real-IP` and normalize
-`X-Forwarded-For`. The app hashes the selected address before storing it in
-Redis and does not log it.
+Gemini correction and ElevenLabs narration share a limit of 10 validated
+requests per visitor/IP per fixed UTC hour. The counter uses the existing
+Tiger Data PostgreSQL configuration (`DATABASE_URL` and, when needed,
+`DATABASE_CA_CERT`) and the `second_try.paid_request_counters` table created
+by migration 003. Configured local environments use Tiger too. Only an
+unconfigured non-production environment uses a bounded in-memory fallback;
+production fails closed with a temporary-unavailable response if the database
+or migration is unavailable. No provider is called when the limiter cannot
+confirm quota. Deployments must provide trusted client-IP headers: the hosting
+ingress should overwrite `X-Real-IP` and normalize `X-Forwarded-For`. The app
+hashes the selected address before storing it and never logs the address.
+Counter rows expire after two hours; run `npm run db:cleanup:paid-counters`
+periodically (for example hourly from a trusted maintenance scheduler) to
+remove expired rows in bounded batches. Cleanup only deletes expired quota
+counters and does not affect learner or practice data.
 
 The Lessons section contains reviewed exercises for accumulators, early
 returns, and off-by-one errors. Each lesson starts with an output prediction,
@@ -90,23 +97,26 @@ The base schema is in
 it was reported as applied through Tiger Cloud SQL Editor. Migration
 [`db/migrations/002_practice_occurrence_order.sql`](./db/migrations/002_practice_occurrence_order.sql)
 adds a backfilled occurrence timestamp and ordering indexes without deleting
-or resetting existing rows. Run the safe status check before migrating:
+or resetting existing rows. Migration
+[`db/migrations/003_paid_request_counters.sql`](./db/migrations/003_paid_request_counters.sql)
+adds only the paid-request counter table and expiration index. Run the safe
+status check before migrating:
 
 ```bash
 npm run db:status
 ```
 
 When an authorized database is configured, inspect the status output. The
-explicit migration command checks existing tables, refuses a partial base
-schema, and applies migration 002 when needed:
+explicit migration command checks existing tables, refuses partial schemas,
+and applies migrations 002 and 003 when needed:
 
 ```bash
 npm run db:migrate:practice
 ```
 
-For an empty database it applies the base schema followed by migration 002.
-Both migrations are additive/idempotent and do not drop or reset data. They
-are never run as part of an application request. Use
+For an empty database it applies the base schema followed by migrations 002
+and 003. All migrations are additive/idempotent and do not drop or reset data.
+They are never run as part of an application request. Use
 [`db/queries/practice_story.sql`](./db/queries/practice_story.sql) in Tiger SQL
 Editor for read-only, learner-filtered history and event-count queries; replace
 the documented UUID placeholder with the learner ID being inspected.
@@ -130,18 +140,17 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 The pinned Pyodide 314.0.7 runtime and its matching assets are served from
-`public/pyodide`. Copy `.env.example` to `.env.local` and set the server-only
-`GEMINI_API_KEY` to use **Fix my code**. To enable narration locally, also
-configure `ELEVENLABS_API_KEY`; `ELEVENLABS_VOICE_ID` is optional. Set the
-Upstash variables to exercise the shared counter locally; otherwise the
-development server uses its in-memory counter:
+`public/pyodide`. Copy `.env.example` to `.env.local`, configure the existing
+Tiger Data connection to exercise the database-backed shared counter, and set
+the server-only `GEMINI_API_KEY` to use **Fix my code**. To enable narration
+locally, also configure `ELEVENLABS_API_KEY`; `ELEVENLABS_VOICE_ID` is optional.
+Only when no database URL is configured, a non-production server uses its
+in-memory counter:
 
 ```dotenv
 GEMINI_API_KEY=your-gemini-key
 ELEVENLABS_API_KEY=your-elevenlabs-key
 ELEVENLABS_VOICE_ID=
-UPSTASH_REDIS_REST_URL=https://your-database.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your-upstash-rest-token
 ```
 
 The key is only used by the server-side `/api/fix` route; never expose it in
@@ -150,11 +159,13 @@ client-side code. `.env.local` is ignored by Git.
 ## Deploy on Vercel
 
 In the Vercel project settings, clear **Root Directory** completely to use the
-repository root. Add `GEMINI_API_KEY` under **Settings → Environment
-Variables**, plus `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN` for the shared production rate limit. Add
+repository root. Configure the existing Tiger Data `DATABASE_URL` and, only
+when required, `DATABASE_CA_CERT`, alongside `GEMINI_API_KEY`. Add
 `ELEVENLABS_API_KEY` to enable narration and optionally add
-`ELEVENLABS_VOICE_ID`. Local `.env.local` values are not automatically uploaded
-to Vercel. Ensure the deployment includes the repository's `public/pyodide`
-assets and that Vercel-provided client IP headers are available to the
-functions.
+`ELEVENLABS_VOICE_ID`. Do not configure Upstash/Redis variables; paid request
+limits use the Tiger database. Run `npm run db:status`, then
+`npm run db:migrate:practice` from an authorized configured environment to
+apply the additive migrations before redeploying. Local `.env.local` values
+are not automatically uploaded to Vercel. Ensure the deployment includes the
+repository's `public/pyodide` assets and that Vercel-provided client IP
+headers are available to the functions.

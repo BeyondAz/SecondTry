@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "figma": {
+      "type": "http",
+      "url": "https://mcp.figma.com/mcp"
+    },
+    "shadcn": {
+      "type": "stdio",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "npx", "-y", "shadcn@latest", "mcp"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "cmd.exe",
+      "args": ["/d", "/c", "npx", "-y", "@playwright/mcp@latest"]
+    }
+  }
+}
