@@ -1,6 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 const requestSchema = z.object({
   code: z.string().min(1).max(20_000),
@@ -17,6 +19,95 @@ const resultSchema = z.object({
   concept: z.string().nullable().optional(),
 });
 
+type FailureCategory =
+  | "authentication"
+  | "authorization"
+  | "quota"
+  | "model"
+  | "request"
+  | "response"
+  | "upstream";
+
+class ModelResponseError extends Error {}
+
+function getErrorType(error: unknown): string {
+  if (error instanceof ApiError) return "ApiError";
+  if (error instanceof z.ZodError) return "ZodError";
+  if (error instanceof SyntaxError) return "SyntaxError";
+  if (error instanceof ModelResponseError) return "ModelResponseError";
+  if (error instanceof Error) return "Error";
+  return "UnknownError";
+}
+
+function classifyFailure(error: unknown): {
+  category: FailureCategory;
+  message: string;
+  status: number;
+} {
+  if (
+    error instanceof ModelResponseError ||
+    error instanceof z.ZodError ||
+    error instanceof SyntaxError
+  ) {
+    return {
+      category: "response",
+      message: "Gemini returned an invalid response. Please retry.",
+      status: 502,
+    };
+  }
+
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return {
+        category: "authentication",
+        message: "Gemini rejected the server API key. Check GEMINI_API_KEY in the server environment.",
+        status: 502,
+      };
+    }
+    if (error.status === 403) {
+      return {
+        category: "authorization",
+        message: "Gemini denied access. Check API access and key restrictions for the server project.",
+        status: 502,
+      };
+    }
+    if (error.status === 404) {
+      return {
+        category: "model",
+        message: `The Gemini model ${GEMINI_MODEL} is unavailable. Check that it is enabled for this API key.`,
+        status: 502,
+      };
+    }
+    if (error.status === 429) {
+      return {
+        category: "quota",
+        message: "Gemini rate or quota limit reached. Wait a moment, then retry.",
+        status: 429,
+      };
+    }
+    if (error.status === 400) {
+      return {
+        category: "request",
+        message: "Gemini rejected the request. Please retry, or check the model request configuration.",
+        status: 502,
+      };
+    }
+    if (error.status === 408 || error.status >= 500) {
+      return {
+        category: "upstream",
+        message: "Gemini is temporarily unavailable. Please retry in a moment.",
+        status: 503,
+      };
+    }
+  }
+
+  return {
+    category: "upstream",
+    message: "Could not reach Gemini. Check the server connection and retry.",
+    status: 503,
+  };
+}
+
 function parseModelResponse(text: string) {
   const json = text
     .trim()
@@ -26,7 +117,7 @@ function parseModelResponse(text: string) {
 
   if (result.needsClarification) {
     if (!result.question?.trim()) {
-      throw new Error("Gemini returned a clarification without a question.");
+      throw new ModelResponseError("Missing clarification question.");
     }
 
     return {
@@ -40,7 +131,7 @@ function parseModelResponse(text: string) {
   }
 
   if (!result.correctedCode?.trim()) {
-    throw new Error("Gemini returned a fix without corrected code.");
+    throw new ModelResponseError("Missing corrected code.");
   }
 
   return {
@@ -78,7 +169,16 @@ export async function POST(request: Request) {
   }
 
   const { code, intendedBehavior, followUpAnswer } = parsedRequest.data;
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      retryOptions: {
+        attempts: 3,
+        initialDelay: 1,
+        maxDelay: 4,
+      },
+    },
+  });
   const prompt = `You are a patient Python tutor. Help debug the user's Python code.
 Return only a JSON object with this shape:
 {
@@ -104,7 +204,7 @@ ${followUpAnswer ? `Answer to your follow-up question:\n${followUpAnswer}` : ""}
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -112,15 +212,17 @@ ${followUpAnswer ? `Answer to your follow-up question:\n${followUpAnswer}` : ""}
     });
 
     if (!response.text) {
-      throw new Error("Gemini returned an empty response.");
+      throw new ModelResponseError("Empty response.");
     }
 
     return NextResponse.json(parseModelResponse(response.text));
   } catch (error) {
-    console.error("Gemini code-fix request failed:", error);
-    return NextResponse.json(
-      { error: "Gemini could not complete the fix. Please retry in a moment." },
-      { status: 502 },
-    );
+    const failure = classifyFailure(error);
+    console.error("Gemini code-fix request failed", {
+      category: failure.category,
+      errorType: getErrorType(error),
+      ...(error instanceof ApiError ? { upstreamStatus: error.status } : {}),
+    });
+    return NextResponse.json({ error: failure.message }, { status: failure.status });
   }
 }

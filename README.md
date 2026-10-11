@@ -26,8 +26,9 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-The Python runtime loads in the browser the first time you run code. To use
-**Fix my code**, add a Gemini API key to `.env.local`:
+The pinned Pyodide 314.0.7 runtime and its matching assets load from jsDelivr
+in the browser the first time you run code, so running Python requires network
+access. To use **Fix my code**, add a Gemini API key to `.env.local`:
 
 ```dotenv
 GEMINI_API_KEY=your-gemini-api-key

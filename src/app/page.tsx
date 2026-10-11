@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import type { PyodideInterface } from "pyodide";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/npm/pyodide@314.0.7/";
 
 const starterCode = `# Welcome to Pyspace
 name = "world"
@@ -73,9 +74,16 @@ export default function Home() {
       let pyodide = pyodideRef.current;
       if (!pyodide) {
         setIsLoadingPython(true);
-        const { loadPyodide } = await import("pyodide");
-        pyodide = await loadPyodide();
+        const pyodideModuleUrl = new URL("pyodide.mjs", PYODIDE_INDEX_URL).href;
+        const { loadPyodide } = await import(
+          /* webpackIgnore: true */ /* turbopackIgnore: true */ pyodideModuleUrl
+        );
+        pyodide = await loadPyodide({ indexURL: PYODIDE_INDEX_URL });
         pyodideRef.current = pyodide;
+      }
+
+      if (!pyodide) {
+        throw new Error("Python runtime did not initialize.");
       }
 
       pyodide.setStdout({
@@ -273,8 +281,9 @@ export default function Home() {
               <span className="panel-hint">Console</span>
             </div>
             <pre className={`output-content${runError ? " output-error" : ""}`}>
-              {runError ||
-                output ||
+              {output}
+              {runError}
+              {!output && !runError &&
                 (isRunning ? "Starting the Python runtime…" : "Run your code to see the output.")}
             </pre>
           </section>
