@@ -132,9 +132,10 @@ or measures of mastery.
 
 ## Database setup and maintenance
 
-The project uses Tiger Data PostgreSQL. The example environment file references
-the existing development service `db-49307`, database `tsdb`; replace placeholders
-with authorized connection settings.
+The project uses Tiger Data PostgreSQL. The current service host is
+`qkocflqner.a9mfea0e1s.tsdb.cloud.timescale.com`, port `37633`, database `tsdb`,
+and username `tsdbadmin`. Replace the password placeholder in `.env.example`
+with the URL-encoded database password in your private environment settings.
 
 Check connectivity and schema status, then apply missing migrations:
 
@@ -237,6 +238,18 @@ automatically. Apply migrations from an authorized configured environment
 before enabling connected features. Include `public/pyodide` in the deployment
 and ensure trusted client-IP headers reach the server. Quota counters use
 PostgreSQL; Redis/Upstash is not required.
+
+Set `DATABASE_URL` in Vercel using this format, replacing `PASSWORD` with the
+URL-encoded database password:
+
+```text
+postgresql://tsdbadmin:PASSWORD@qkocflqner.a9mfea0e1s.tsdb.cloud.timescale.com:37633/tsdb?sslmode=require
+```
+
+The password-free Quick connect URL identifies the service but does not supply
+application authentication. Add `GEMINI_API_KEY` and, for narration,
+`ELEVENLABS_API_KEY` separately. Select the appropriate Vercel environments
+and redeploy after saving the variables. Never commit their real values.
 
 ## Troubleshooting
 
