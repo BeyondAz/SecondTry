@@ -1,17 +1,30 @@
 "use client";
 
 import dynamic from "next/dynamic";
+<<<<<<< HEAD
 import { useCallback, useRef, useState } from "react";
 import type { PyodideInterface } from "pyodide";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/npm/pyodide@314.0.7/";
+=======
+import Link from "next/link";
+import { useCallback, useRef, useState } from "react";
+import {
+  createPythonRun,
+  isPythonTestCases,
+  type PythonRun,
+} from "@/lib/pythonRunner";
+
+const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+>>>>>>> 8b37a61 (10:48)
 
 const starterCode = `# Welcome to Pyspace
 name = "world"
 print(f"Hello, {name}!")
 `;
 
+<<<<<<< HEAD
 const exampleCode = `def average(numbers):
     return sum(numbers) / len(number)
 
@@ -22,6 +35,14 @@ print(f"The average score is {average(scores):.1f}")
 type FixRequest = {
   code: string;
   intendedBehavior: string;
+=======
+type FixRequest = {
+  code: string;
+  intendedBehavior: string;
+  errorMessage?: string;
+  exampleArguments?: string;
+  expectedResult?: string;
+>>>>>>> 8b37a61 (10:48)
   followUpAnswer?: string;
 };
 
@@ -50,9 +71,77 @@ function isFixResult(value: unknown): value is FixResult {
   );
 }
 
+<<<<<<< HEAD
 export default function Home() {
   const [code, setCode] = useState(starterCode);
   const [intendedBehavior, setIntendedBehavior] = useState("");
+=======
+type DiffLine = {
+  kind: "added" | "removed" | "context";
+  text: string;
+};
+
+function buildCodeDiff(original: string, corrected: string): DiffLine[] {
+  const oldLines = original.split("\n");
+  const newLines = corrected.split("\n");
+  if (oldLines.length > 300 || newLines.length > 300) {
+    return [
+      ...oldLines.map((text) => ({ kind: "removed" as const, text })),
+      ...newLines.map((text) => ({ kind: "added" as const, text })),
+    ];
+  }
+
+  const lengths = Array.from(
+    { length: oldLines.length + 1 },
+    () => new Uint16Array(newLines.length + 1),
+  );
+  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
+    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
+      lengths[oldIndex][newIndex] =
+        oldLines[oldIndex] === newLines[newIndex]
+          ? lengths[oldIndex + 1][newIndex + 1] + 1
+          : Math.max(
+              lengths[oldIndex + 1][newIndex],
+              lengths[oldIndex][newIndex + 1],
+            );
+    }
+  }
+
+  const diff: DiffLine[] = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+  while (oldIndex < oldLines.length || newIndex < newLines.length) {
+    if (
+      oldIndex < oldLines.length &&
+      newIndex < newLines.length &&
+      oldLines[oldIndex] === newLines[newIndex]
+    ) {
+      diff.push({ kind: "context", text: oldLines[oldIndex] });
+      oldIndex += 1;
+      newIndex += 1;
+    } else if (
+      oldIndex < oldLines.length &&
+      (newIndex === newLines.length ||
+        lengths[oldIndex + 1][newIndex] >= lengths[oldIndex][newIndex + 1])
+    ) {
+      diff.push({ kind: "removed", text: oldLines[oldIndex] });
+      oldIndex += 1;
+    } else {
+      diff.push({ kind: "added", text: newLines[newIndex] });
+      newIndex += 1;
+    }
+  }
+  return diff;
+}
+
+export default function Home() {
+  const [code, setCode] = useState(starterCode);
+  const [testCases, setTestCases] = useState("[]");
+  const [intendedBehavior, setIntendedBehavior] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [exampleArguments, setExampleArguments] = useState("");
+  const [expectedResult, setExpectedResult] = useState("");
+>>>>>>> 8b37a61 (10:48)
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [fixResult, setFixResult] = useState<FixResult | null>(null);
   const [originalFixCode, setOriginalFixCode] = useState<string | null>(null);
@@ -63,6 +152,7 @@ export default function Home() {
   const [runError, setRunError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingPython, setIsLoadingPython] = useState(false);
+<<<<<<< HEAD
   const pyodideRef = useRef<PyodideInterface | null>(null);
 
   const runCode = useCallback(async () => {
@@ -93,17 +183,106 @@ export default function Home() {
         batched: (text) => setOutput((current) => `${current}${text}\n`),
       });
       await pyodide.runPythonAsync(code);
+=======
+  const pythonRunRef = useRef<PythonRun | null>(null);
+  const correctionRequestIdRef = useRef(0);
+  const editorRef = useRef<{ focus: () => void } | null>(null);
+
+  const invalidateCorrection = () => {
+    correctionRequestIdRef.current += 1;
+    setIsFixing(false);
+    setFixError("");
+    setFixResult(null);
+    setOriginalFixCode(null);
+    setLastFixRequest(null);
+    setClarificationAnswer("");
+  };
+
+  const clearExecutionResult = () => {
+    const activeRun = pythonRunRef.current;
+    pythonRunRef.current = null;
+    activeRun?.stop();
+    setIsLoadingPython(false);
+    setIsRunning(false);
+    setOutput("");
+    setRunError("");
+  };
+
+  const updateCode = (value: string) => {
+    if (value === code) return;
+    setCode(value);
+    clearExecutionResult();
+    invalidateCorrection();
+  };
+
+  const updateTestCases = (value: string) => {
+    if (value === testCases) return;
+    setTestCases(value);
+    clearExecutionResult();
+  };
+
+  const runCode = useCallback(async () => {
+    setOutput("");
+    setRunError("");
+    let activeRun: PythonRun | null = null;
+
+    try {
+      const parsedTestCases: unknown = JSON.parse(testCases);
+      if (!isPythonTestCases(parsedTestCases)) {
+        throw new Error(
+          "Tests must be a JSON array of up to 25 cases with a functionName and basic-type args.",
+        );
+      }
+
+      setIsRunning(true);
+      activeRun = createPythonRun(
+        {
+          requestId: crypto.randomUUID(),
+          code,
+          testCases: parsedTestCases,
+        },
+        setIsLoadingPython,
+      );
+      pythonRunRef.current = activeRun;
+      const response = await activeRun.promise;
+      if (pythonRunRef.current !== activeRun) return;
+      const resultsOutput =
+        response.results.length > 0
+          ? `Results:\n${response.results.map((result) => JSON.stringify(result)).join("\n")}`
+          : "";
+      setOutput(
+        [response.stdout, resultsOutput]
+          .filter(Boolean)
+          .join(response.stdout && !response.stdout.endsWith("\n") ? "\n" : ""),
+      );
+
+      if (response.error) setRunError(response.error);
+>>>>>>> 8b37a61 (10:48)
     } catch (error) {
       setRunError(
         error instanceof Error ? error.message : "Python could not be run.",
       );
     } finally {
+<<<<<<< HEAD
       setIsLoadingPython(false);
       setIsRunning(false);
     }
   }, [code]);
 
   const requestFix = useCallback(async (request: FixRequest) => {
+=======
+      if (!activeRun || pythonRunRef.current === activeRun) {
+        setIsLoadingPython(false);
+        setIsRunning(false);
+        pythonRunRef.current = null;
+      }
+    }
+  }, [code, testCases]);
+
+  const requestFix = useCallback(async (request: FixRequest) => {
+    const requestId = correctionRequestIdRef.current + 1;
+    correctionRequestIdRef.current = requestId;
+>>>>>>> 8b37a61 (10:48)
     setIsFixing(true);
     setFixError("");
     setFixResult(null);
@@ -133,24 +312,95 @@ export default function Home() {
         throw new Error("Gemini returned an unexpected response. Please retry.");
       }
 
+<<<<<<< HEAD
+=======
+      if (correctionRequestIdRef.current !== requestId) return;
+>>>>>>> 8b37a61 (10:48)
       setOriginalFixCode(request.code);
       setFixResult(data);
       setClarificationAnswer("");
     } catch (error) {
+<<<<<<< HEAD
+=======
+      if (correctionRequestIdRef.current !== requestId) return;
+>>>>>>> 8b37a61 (10:48)
       setFixError(
         error instanceof Error
           ? error.message
           : "The fix request failed. Please try again.",
       );
     } finally {
+<<<<<<< HEAD
       setIsFixing(false);
+=======
+      if (correctionRequestIdRef.current === requestId) {
+        setIsFixing(false);
+      }
+>>>>>>> 8b37a61 (10:48)
     }
   }, []);
 
   const handleFix = () => {
+<<<<<<< HEAD
     void requestFix({
       code,
       intendedBehavior,
+=======
+    if (!code.trim() || code.length > 20_000) {
+      setFixError("Enter nonblank code with no more than 20,000 characters.");
+      return;
+    }
+    if (!intendedBehavior.trim() || intendedBehavior.length > 3_000) {
+      setFixError(
+        "Describe the intended behavior in 3,000 characters or fewer.",
+      );
+      return;
+    }
+    if (
+      fixResult?.needsClarification &&
+      (!clarificationAnswer.trim() || clarificationAnswer.length > 3_000)
+    ) {
+      setFixError(
+        "Enter a clarification answer in 3,000 characters or fewer.",
+      );
+      return;
+    }
+
+    let normalizedArguments: string | undefined;
+    if (exampleArguments.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(exampleArguments);
+        if (!Array.isArray(parsed)) {
+          throw new Error("Arguments must be a JSON array.");
+        }
+        normalizedArguments = JSON.stringify(parsed);
+      } catch {
+        setFixError("Example arguments must be a valid JSON array.");
+        return;
+      }
+    }
+
+    let normalizedExpectedResult: string | undefined;
+    if (expectedResult.trim()) {
+      try {
+        normalizedExpectedResult = JSON.stringify(JSON.parse(expectedResult));
+      } catch {
+        setFixError("Expected result must be valid JSON.");
+        return;
+      }
+    }
+
+    void requestFix({
+      code,
+      intendedBehavior,
+      ...(errorMessage.trim() ? { errorMessage: errorMessage.trim() } : {}),
+      ...(normalizedArguments !== undefined
+        ? { exampleArguments: normalizedArguments }
+        : {}),
+      ...(normalizedExpectedResult !== undefined
+        ? { expectedResult: normalizedExpectedResult }
+        : {}),
+>>>>>>> 8b37a61 (10:48)
       ...(fixResult?.needsClarification && clarificationAnswer.trim()
         ? { followUpAnswer: clarificationAnswer.trim() }
         : {}),
@@ -158,8 +408,26 @@ export default function Home() {
   };
 
   const loadExample = () => {
+<<<<<<< HEAD
     setCode(exampleCode);
     setIntendedBehavior("Calculate and display the average score.");
+=======
+    cancelCode();
+    invalidateCorrection();
+    setCode(`def sum_numbers(numbers):
+    total = 0
+    for number in numbers:
+        total = number
+    return total
+`);
+    setTestCases("[]");
+    setIntendedBehavior(
+      "Return the sum of all numbers in the list, adding each number to the running total.",
+    );
+    setErrorMessage("");
+    setExampleArguments("[[2, 3, 4]]");
+    setExpectedResult("9");
+>>>>>>> 8b37a61 (10:48)
     setClarificationAnswer("");
     setFixResult(null);
     setOriginalFixCode(null);
@@ -168,6 +436,24 @@ export default function Home() {
     setRunError("");
   };
 
+<<<<<<< HEAD
+=======
+  const stopCode = () => pythonRunRef.current?.stop();
+
+  const cancelCode = () => {
+    const activeRun = pythonRunRef.current;
+    pythonRunRef.current = null;
+    activeRun?.stop();
+    setIsLoadingPython(false);
+    setIsRunning(false);
+  };
+
+  const diffLines =
+    originalFixCode !== null && fixResult?.correctedCode
+      ? buildCodeDiff(originalFixCode, fixResult.correctedCode)
+      : [];
+
+>>>>>>> 8b37a61 (10:48)
   const downloadCode = () => {
     const file = new Blob([code], { type: "text/x-python;charset=utf-8" });
     const url = URL.createObjectURL(file);
@@ -191,12 +477,20 @@ export default function Home() {
   return (
     <main className="workspace">
       <header className="topbar">
+<<<<<<< HEAD
         <a className="brand" href="/" aria-label="Pyspace home">
+=======
+        <Link className="brand" href="/" aria-label="Pyspace home">
+>>>>>>> 8b37a61 (10:48)
           <span className="brand-mark" aria-hidden="true">
             {"</>"}
           </span>
           <span>pyspace</span>
+<<<<<<< HEAD
         </a>
+=======
+        </Link>
+>>>>>>> 8b37a61 (10:48)
         <div className="topbar-note">
           <span className="status-dot" />
           Python playground
@@ -223,15 +517,31 @@ export default function Home() {
                 <span className="python-badge">Py</span>
                 <span>main.py</span>
               </div>
+<<<<<<< HEAD
               <span className="panel-hint">Python 3</span>
             </div>
             <div className="editor-wrap">
               <Editor
+=======
+              <span className="panel-hint">
+                Python 3 · {code.length.toLocaleString()}/20k chars
+              </span>
+            </div>
+            <div className="editor-wrap">
+              <Editor
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
+>>>>>>> 8b37a61 (10:48)
                 height="390px"
                 language="python"
                 theme="vs-dark"
                 value={code}
+<<<<<<< HEAD
                 onChange={(value) => setCode(value ?? "")}
+=======
+                onChange={(value) => updateCode(value ?? "")}
+>>>>>>> 8b37a61 (10:48)
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
@@ -244,6 +554,25 @@ export default function Home() {
                 }}
               />
             </div>
+<<<<<<< HEAD
+=======
+            <details className="test-case-settings">
+              <summary>Function tests (optional)</summary>
+              <p>
+                Call functions with JSON basic types. Each case needs a
+                functionName and args; kwargs is optional.
+              </p>
+              <textarea
+                className="text-field test-case-input"
+                aria-label="Function test cases in JSON"
+                rows={4}
+                value={testCases}
+                onChange={(event) => updateTestCases(event.target.value)}
+                placeholder={'[{"functionName":"add","args":[2,3]}]'}
+                disabled={isRunning}
+              />
+            </details>
+>>>>>>> 8b37a61 (10:48)
             <div className="editor-actions">
               <p className="editor-note">Your code runs locally in your browser.</p>
               <div className="editor-button-group">
@@ -254,6 +583,7 @@ export default function Home() {
                 >
                   Download
                 </button>
+<<<<<<< HEAD
                 <button
                   className="button button-run"
                   onClick={() => void runCode()}
@@ -271,6 +601,22 @@ export default function Home() {
                     </>
                   )}
                 </button>
+=======
+                {isRunning ? (
+                  <button className="button button-stop" onClick={stopCode}>
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    className="button button-run"
+                    onClick={() => void runCode()}
+                    disabled={!code.trim()}
+                  >
+                    <span aria-hidden="true">▶</span>
+                    Run code
+                  </button>
+                )}
+>>>>>>> 8b37a61 (10:48)
               </div>
             </div>
           </section>
@@ -280,11 +626,26 @@ export default function Home() {
               <h2 id="output-title">Output</h2>
               <span className="panel-hint">Console</span>
             </div>
+<<<<<<< HEAD
             <pre className={`output-content${runError ? " output-error" : ""}`}>
               {output}
               {runError}
               {!output && !runError &&
                 (isRunning ? "Starting the Python runtime…" : "Run your code to see the output.")}
+=======
+            <pre
+              className={`output-content${runError ? " output-error" : ""}`}
+              aria-live="polite"
+            >
+              {output}
+              {runError}
+              {!output && !runError &&
+                (isRunning
+                  ? isLoadingPython
+                    ? "Loading Python…"
+                    : "Running Python…"
+                  : "Run your code to see the output.")}
+>>>>>>> 8b37a61 (10:48)
             </pre>
           </section>
         </div>
@@ -301,19 +662,97 @@ export default function Home() {
             Explain what you expected, and Gemini will help you understand and
             correct the code.
           </p>
+<<<<<<< HEAD
 
           <label className="field-label" htmlFor="intended-behavior">
             What should the code do?
+=======
+          <p className="supported-scope">
+            Best for short, self-contained Python functions. External packages,
+            databases, interactive input, and user files are outside the
+            supported execution scope.
+          </p>
+
+          <label className="field-label" htmlFor="intended-behavior">
+            What should the code do? <span aria-hidden="true">*</span>
+>>>>>>> 8b37a61 (10:48)
           </label>
           <textarea
             id="intended-behavior"
             className="text-field"
             rows={4}
             value={intendedBehavior}
+<<<<<<< HEAD
             onChange={(event) => setIntendedBehavior(event.target.value)}
             placeholder="Describe the expected result or the problem you noticed…"
             disabled={isFixing}
           />
+=======
+            maxLength={3_000}
+            required
+            aria-required="true"
+            onChange={(event) => {
+              invalidateCorrection();
+              setIntendedBehavior(event.target.value);
+            }}
+            placeholder="Describe the expected result or the problem you noticed…"
+            disabled={isFixing}
+          />
+          <p className="field-limit">{intendedBehavior.length}/3,000 characters</p>
+
+          <label className="field-label" htmlFor="error-message">
+            Error message <span className="optional-label">(optional)</span>
+          </label>
+          <textarea
+            id="error-message"
+            className="text-field"
+            rows={2}
+            value={errorMessage}
+            maxLength={3_000}
+            onChange={(event) => {
+              invalidateCorrection();
+              setErrorMessage(event.target.value);
+            }}
+            placeholder="Paste the error or traceback, if any…"
+            disabled={isFixing}
+          />
+
+          <label className="field-label field-spaced" htmlFor="example-arguments">
+            Example arguments{" "}
+            <span className="optional-label">(optional JSON array)</span>
+          </label>
+          <textarea
+            id="example-arguments"
+            className="text-field"
+            rows={2}
+            value={exampleArguments}
+            maxLength={3_000}
+            onChange={(event) => {
+              invalidateCorrection();
+              setExampleArguments(event.target.value);
+            }}
+            placeholder="[[2, 3, 4]]"
+            disabled={isFixing}
+          />
+
+          <label className="field-label field-spaced" htmlFor="expected-result">
+            Expected result{" "}
+            <span className="optional-label">(optional JSON value)</span>
+          </label>
+          <textarea
+            id="expected-result"
+            className="text-field"
+            rows={2}
+            value={expectedResult}
+            maxLength={3_000}
+            onChange={(event) => {
+              invalidateCorrection();
+              setExpectedResult(event.target.value);
+            }}
+            placeholder="9, null, false, 0, …"
+            disabled={isFixing}
+          />
+>>>>>>> 8b37a61 (10:48)
 
           {fixResult?.needsClarification && (
             <div className="clarification-box" role="status">
@@ -326,6 +765,12 @@ export default function Home() {
                 className="text-field"
                 rows={3}
                 value={clarificationAnswer}
+<<<<<<< HEAD
+=======
+                maxLength={3_000}
+                required
+                aria-required="true"
+>>>>>>> 8b37a61 (10:48)
                 onChange={(event) => setClarificationAnswer(event.target.value)}
                 placeholder="Add a little more detail…"
                 disabled={isFixing}
@@ -339,7 +784,16 @@ export default function Home() {
             disabled={
               isFixing ||
               !code.trim() ||
+<<<<<<< HEAD
               (fixResult?.needsClarification && !clarificationAnswer.trim())
+=======
+              code.length > 20_000 ||
+              !intendedBehavior.trim() ||
+              intendedBehavior.length > 3_000 ||
+              (fixResult?.needsClarification &&
+                (!clarificationAnswer.trim() ||
+                  clarificationAnswer.length > 3_000))
+>>>>>>> 8b37a61 (10:48)
             }
           >
             {isFixing ? (
@@ -372,7 +826,11 @@ export default function Home() {
           {fixResult && !fixResult.needsClarification && (
             <div className="fix-result" aria-live="polite">
               <div className="result-title-row">
+<<<<<<< HEAD
                 <h3>Suggested fix</h3>
+=======
+                <h3>Suggested correction — not executed</h3>
+>>>>>>> 8b37a61 (10:48)
                 <button
                   className="text-button"
                   onClick={() => void copyCorrectedCode()}
@@ -388,9 +846,30 @@ export default function Home() {
               )}
               {originalFixCode !== null && fixResult.correctedCode && (
                 <details className="code-comparison">
+<<<<<<< HEAD
                   <summary>Compare with original code</summary>
                   <pre className="corrected-code original-code">
                     <code>{originalFixCode}</code>
+=======
+                  <summary>Highlighted diff from submitted code</summary>
+                  <pre className="code-diff" aria-label="Highlighted code diff">
+                    {diffLines.map((line, index) => (
+                      <span
+                        className={`diff-line diff-${line.kind}`}
+                        key={`${index}-${line.kind}`}
+                      >
+                        <span className="diff-marker" aria-hidden="true">
+                          {line.kind === "added"
+                            ? "+"
+                            : line.kind === "removed"
+                              ? "−"
+                              : " "}
+                        </span>
+                        {line.text || " "}
+                        {"\n"}
+                      </span>
+                    ))}
+>>>>>>> 8b37a61 (10:48)
                   </pre>
                 </details>
               )}
@@ -414,15 +893,33 @@ export default function Home() {
                 className="button button-secondary apply-button"
                 onClick={() => {
                   if (fixResult.correctedCode) {
+<<<<<<< HEAD
                     setCode(fixResult.correctedCode);
                     setOutput("");
                     setRunError("");
+=======
+                    updateCode(fixResult.correctedCode);
+>>>>>>> 8b37a61 (10:48)
                   }
                 }}
                 disabled={!fixResult.correctedCode}
               >
                 Use corrected code
               </button>
+<<<<<<< HEAD
+=======
+              {originalFixCode !== null && (
+                <button
+                  className="text-button edit-submission-button"
+                  onClick={() => {
+                    updateCode(originalFixCode);
+                    editorRef.current?.focus();
+                  }}
+                >
+                  Edit submission
+                </button>
+              )}
+>>>>>>> 8b37a61 (10:48)
             </div>
           )}
         </aside>

@@ -5,9 +5,22 @@ import { z } from "zod";
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 const requestSchema = z.object({
+<<<<<<< HEAD
   code: z.string().min(1).max(20_000),
   intendedBehavior: z.string().max(3_000).default(""),
   followUpAnswer: z.string().max(3_000).optional(),
+=======
+  code: z.string().max(20_000).refine((value) => value.trim().length > 0),
+  intendedBehavior: z.string().max(3_000).refine((value) => value.trim().length > 0),
+  errorMessage: z.string().max(3_000).optional(),
+  exampleArguments: z.string().max(3_000).optional(),
+  expectedResult: z.string().max(3_000).optional(),
+  followUpAnswer: z
+    .string()
+    .max(3_000)
+    .refine((value) => value.trim().length > 0)
+    .optional(),
+>>>>>>> 8b37a61 (10:48)
 });
 
 const resultSchema = z.object({
@@ -155,7 +168,37 @@ export async function POST(request: Request) {
   const parsedRequest = requestSchema.safeParse(rawBody);
   if (!parsedRequest.success) {
     return NextResponse.json(
+<<<<<<< HEAD
       { error: "Provide Python code and keep the request within the allowed size." },
+=======
+      {
+        error:
+          "Provide nonblank code and intended behavior; keep code within 20,000 characters and behavior and clarification answers within 3,000 characters.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const { exampleArguments, expectedResult } = parsedRequest.data;
+  let parsedExampleArguments: unknown;
+  let parsedExpectedResult: unknown;
+  try {
+    if (exampleArguments?.trim()) {
+      parsedExampleArguments = JSON.parse(exampleArguments);
+      if (!Array.isArray(parsedExampleArguments)) {
+        throw new Error("Example arguments must be a JSON array.");
+      }
+    }
+    if (expectedResult?.trim()) {
+      parsedExpectedResult = JSON.parse(expectedResult);
+    }
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          "Example arguments must be a JSON array, and the expected result must be valid JSON.",
+      },
+>>>>>>> 8b37a61 (10:48)
       { status: 400 },
     );
   }
@@ -168,7 +211,16 @@ export async function POST(request: Request) {
     );
   }
 
+<<<<<<< HEAD
   const { code, intendedBehavior, followUpAnswer } = parsedRequest.data;
+=======
+  const {
+    code,
+    intendedBehavior,
+    errorMessage,
+    followUpAnswer,
+  } = parsedRequest.data;
+>>>>>>> 8b37a61 (10:48)
   const ai = new GoogleGenAI({
     apiKey,
     httpOptions: {
@@ -198,7 +250,17 @@ ${code}
 \`\`\`
 
 Intended behavior:
+<<<<<<< HEAD
 ${intendedBehavior || "(not provided)"}
+=======
+${intendedBehavior}
+
+${errorMessage ? `Observed error message:\n${errorMessage}` : ""}
+
+${exampleArguments?.trim() ? `Example function arguments (JSON):\n${JSON.stringify(parsedExampleArguments)}` : ""}
+
+${expectedResult?.trim() ? `Expected result (JSON):\n${JSON.stringify(parsedExpectedResult)}` : ""}
+>>>>>>> 8b37a61 (10:48)
 
 ${followUpAnswer ? `Answer to your follow-up question:\n${followUpAnswer}` : ""}`;
 
