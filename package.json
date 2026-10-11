@@ -6,13 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:status": "node scripts/practice-db-status.mjs",
+    "db:migrate:practice": "node scripts/migrate-practice-history.mjs",
+    "test:practice": "node --experimental-strip-types --test src/lib/practice-recommendations.test.ts",
+    "test:practice-db": "node scripts/test-practice-db.mjs"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.71.0",
     "@google/genai": "^2.28.0",
     "@monaco-editor/react": "^4.7.0",
     "next": "16.4.0",
+    "pg": "^8.23.1",
     "pyodide": "314.0.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -21,6 +26,7 @@
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

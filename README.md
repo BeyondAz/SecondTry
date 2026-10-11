@@ -1,59 +1,104 @@
 # Pyspace Python Playground
 
-Pyspace is a browser-based Python playground. Edit `main.py` with Python
-syntax highlighting, describe what you want the code to do, and run it in the
-<<<<<<< HEAD
-output console. Python runs in the browser with Pyodide; use **Download** to
-save your code as `main.py`.
-=======
-output console. Python runs in a fresh Pyodide worker inside an opaque-origin
-sandbox for every run, so code has no access to the app's origin or storage.
-Use **Download** to save your code as `main.py`.
-
-Use **Function tests (optional)** to call short functions with JSON-compatible
-basic types. For example, with `def add(a, b): return a + b`, enter:
+Pyspace is a browser-based Python playground. Edit `Pymain.py` with Python
+syntax highlighting and run it locally in an isolated Pyodide worker. Optional
+function tests accept JSON-compatible values; for example, with
+`def add(a, b): return a + b`, enter:
 
 ```json
 [{"functionName":"add","args":[2,3]}]
 ```
 
-The output panel shows the returned values. Runs can be stopped and have a
-five-second execution limit; captured output is capped to keep large prints
-from overwhelming the page.
->>>>>>> 8b37a61 (10:48)
+Runs can be stopped and have a five-second execution limit. Captured output is
+capped to keep large prints from overwhelming the page.
 
-The **Fix my code** action uses the `/api/fix` Gemini endpoint. Set
-`GEMINI_API_KEY` in the server environment (or your hosting provider's
-environment-variable settings) before starting or deploying the app; the key
-<<<<<<< HEAD
-is never sent to the browser. If intended behavior is unclear, the app asks a
-follow-up question. Suggested fixes include a summary, explained changes, and
-<<<<<<< HEAD
-an underlying Python concept and practice pattern. Compare the original and
-corrected code, then use **Copy corrected code** to copy the suggestion. Failed
-requests show a readable error and a **Retry** action. **Load example** fills
-the editor and optional context fields with a sample bug to fix.
-When you ask for a fix, the current editor code and any recent Python output or
-traceback are included automatically so you do not need to paste them again.
-=======
-an underlying Python concept. Compare the original and corrected code, then
-use **Copy corrected code** to copy the suggestion. Failed requests show a
-readable error and a **Retry** action. **Load example** fills the editor and
-optional context fields with a sample bug to fix.
-=======
-is never sent to the browser. Code and intended behavior are required; optional
-context includes an error message, JSON-array example arguments, and a
-JSON-encoded expected result. The tool is intended for short, self-contained
-Python functions; external packages, databases, interactive input, and user
-files are outside the supported execution scope. If intended behavior is
-unclear, the app asks a follow-up question. Suggested corrections are not
-executed automatically; review the highlighted diff, then copy the correction,
-apply it, or restore and edit the submitted code. Failed requests show a
-readable error and a **Retry** action. **Load example** fills the editor and
-context fields with a broken accumulator demo (`[[2, 3, 4]]` should return
-`9`).
->>>>>>> 8b37a61 (10:48)
->>>>>>> 750c04b6233b15555603756c9c6a4db628655137
+The **Fix my code** action uses the server-side `/api/fix` Gemini endpoint.
+Set `GEMINI_API_KEY` in the server environment before starting or deploying the
+app; the key is never sent to the browser. The current editor code and recent
+Python output or traceback are included automatically. You may optionally add
+the intended behavior, an error, example function arguments, and an expected
+result. If a detail is genuinely needed, the app asks a focused follow-up
+question. Suggested corrections include an explanation and practice pattern;
+review them before applying. **Load average example** inserts a broken
+average-score example and its expected behavior into the editor.
+
+The Lessons section contains reviewed exercises for accumulators, early
+returns, and off-by-one errors. Each lesson starts with an output prediction,
+then provides a guided repair, tests, progressive hints, reset, and an
+independent follow-up exercise. Test feedback and completion summaries are for
+practice and are not tamper-proof assessments.
+
+## Persistent practice history
+
+When configured, practice history follows this flow:
+
+**Browser practice → Next.js server → Tiger Postgres → private attempt history
+and recommendations → next exercise.**
+
+Python still runs locally in Pyodide. The browser sends only a completed
+exercise ID, outcome, hint count, opaque attempt/session IDs, and the attempt's
+occurrence timestamp to the server; it does not send code, test arguments,
+output, exceptions, or predictions for history. The server identifies an anonymous learner with a random, HttpOnly,
+SameSite=Lax cookie and stores only a SHA-256 hash of its token. The cookie
+expires after 90 days. Clearing this site's cookies creates a new anonymous
+learner; it does not delete the previous learner's history.
+
+History counts describe browser-reported **events**, not distinct learners,
+mastery, or verified assessment results. Recommendations are deterministic
+practice suggestions based on the learner's recorded attempts. Browser-side
+test results and occurrence timestamps can be altered and must not be treated
+as a secure assessment. History and recommendations order events by their
+browser-reported occurrence timestamp; events with identical timestamps are
+ordered by descending attempt UUID. The separate database recording timestamp
+is retained for diagnostics.
+
+### Configure the existing Tiger service
+
+Copy [`.env.example`](./.env.example) to `.env.local`, then replace its
+placeholders with the authorized connection settings for the existing Tiger
+Cloud development service `db-49307` and database `tsdb`. Do not put
+credentials in chat or commit `.env.local`; the example contains placeholders
+only.
+
+`DATABASE_URL` is server-only. `DATABASE_CA_CERT` is optional and should be
+set to a trusted PEM CA only when the service requires a CA not trusted by the
+host. TLS certificate validation stays enabled. The application removes SSL
+options from the connection string and applies its explicit validating TLS
+configuration, avoiding node-postgres connection-string SSL precedence
+overriding the trusted CA settings.
+
+The base schema is in
+[`db/migrations/001_practice_history.sql`](./db/migrations/001_practice_history.sql);
+it was reported as applied through Tiger Cloud SQL Editor. Migration
+[`db/migrations/002_practice_occurrence_order.sql`](./db/migrations/002_practice_occurrence_order.sql)
+adds a backfilled occurrence timestamp and ordering indexes without deleting
+or resetting existing rows. Run the safe status check before migrating:
+
+```bash
+npm run db:status
+```
+
+When an authorized database is configured, inspect the status output. The
+explicit migration command checks existing tables, refuses a partial base
+schema, and applies migration 002 when needed:
+
+```bash
+npm run db:migrate:practice
+```
+
+For an empty database it applies the base schema followed by migration 002.
+Both migrations are additive/idempotent and do not drop or reset data. They
+are never run as part of an application request. Use
+[`db/queries/practice_story.sql`](./db/queries/practice_story.sql) in Tiger SQL
+Editor for read-only, learner-filtered history and event-count queries; replace
+the documented UUID placeholder with the learner ID being inspected.
+
+If `DATABASE_URL` is missing or Tiger is temporarily unreachable, the app
+continues to run Python exercises locally. My Practice shows that persistent
+history is unavailable; completed runs remain usable, and any unsaved event
+is held only in memory with an explicit retry action. Configure the database
+environment and retry; unsaved in-memory runs are lost if the page is
+refreshed or closed.
 
 ## Run locally
 
@@ -64,42 +109,20 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-<<<<<<< HEAD
-The pinned Pyodide 314.0.7 runtime and its matching assets load from jsDelivr
-in the browser the first time you run code, so running Python requires network
-access. To use **Fix my code**, add a Gemini API key to `.env.local`:
-=======
-The pinned Pyodide 314.0.7 runtime and its matching assets are included in the
-deployment under `public/pyodide`. To use **Fix my code**, add a Gemini API
-key to `.env.local`:
->>>>>>> 8b37a61 (10:48)
+The pinned Pyodide 314.0.7 runtime and its matching assets are served from
+`public/pyodide`. To use **Fix my code**, add a Gemini API key to `.env.local`:
 
-```dotenv
-GEMINI_API_KEY=your-gemini-api-key
-```
+
 
 The key is only used by the server-side `/api/fix` route; never expose it in
 client-side code. `.env.local` is ignored by Git.
 
 ## Deploy on Vercel
 
-In the Vercel project settings, clear **Root Directory** completely (no spaces)
-to use the repository root. Add `GEMINI_API_KEY` under **Settings → Environment
+In the Vercel project settings, clear **Root Directory** completely to use the
+repository root. Add `GEMINI_API_KEY` under **Settings → Environment
 Variables**, then redeploy. Local `.env.local` values are not automatically
-uploaded to Vercel.
-
-The npm deprecation and install-script messages shown during installation are
-warnings. They do not explain a starter page appearing after deployment.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-For more details, see the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying).
+uploaded to Vercel. Ensure the deployment includes the repository's
+`public/pyodide` assets.

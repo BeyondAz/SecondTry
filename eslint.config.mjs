@@ -12,10 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-<<<<<<< HEAD
-=======
     "public/pyodide/**",
->>>>>>> 8b37a61 (10:48)
   ]),
 ]);
 

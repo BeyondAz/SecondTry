@@ -13,6 +13,9 @@ export const fixRequestSchema = z
     intendedBehavior: z.string().max(3_000).default(""),
     followUpAnswer: z.string().max(3_000).optional(),
     executionOutput: z.string().max(8_000).optional(),
+    errorMessage: z.string().max(3_000).optional(),
+    exampleArguments: z.string().max(3_000).optional(),
+    expectedResult: z.string().max(3_000).optional(),
     practiceType: practiceTypeSchema.optional(),
   })
   .strict();
