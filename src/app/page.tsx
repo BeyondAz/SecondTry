@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
 import type { PyodideInterface } from "pyodide";
+import { fixResultSchema } from "@/lib/fix-schema";
+import type { FixRequest, FixResult } from "@/lib/fix-schema";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/npm/pyodide@314.0.7/";
@@ -19,37 +21,6 @@ scores = [82, 91, 76]
 print(f"The average score is {average(scores):.1f}")
 `;
 
-type FixRequest = {
-  code: string;
-  intendedBehavior: string;
-  followUpAnswer?: string;
-};
-
-type FixResult = {
-  needsClarification: boolean;
-  question: string | null;
-  correctedCode: string | null;
-  summary: string | null;
-  explanations: string[];
-  concept: string | null;
-};
-
-function isFixResult(value: unknown): value is FixResult {
-  if (!value || typeof value !== "object") return false;
-
-  const result = value as Record<string, unknown>;
-  return (
-    typeof result.needsClarification === "boolean" &&
-    (typeof result.question === "string" || result.question === null) &&
-    (typeof result.correctedCode === "string" ||
-      result.correctedCode === null) &&
-    (typeof result.summary === "string" || result.summary === null) &&
-    Array.isArray(result.explanations) &&
-    result.explanations.every((item) => typeof item === "string") &&
-    (typeof result.concept === "string" || result.concept === null)
-  );
-}
-
 export default function Home() {
   const [code, setCode] = useState(starterCode);
   const [intendedBehavior, setIntendedBehavior] = useState("");
@@ -64,6 +35,14 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingPython, setIsLoadingPython] = useState(false);
   const pyodideRef = useRef<PyodideInterface | null>(null);
+
+  const clearFixContext = () => {
+    setFixResult(null);
+    setOriginalFixCode(null);
+    setClarificationAnswer("");
+    setFixError("");
+    setLastFixRequest(null);
+  };
 
   const runCode = useCallback(async () => {
     setIsRunning(true);
@@ -103,6 +82,13 @@ export default function Home() {
     }
   }, [code]);
 
+  const handleCodeChange = (value: string) => {
+    setCode(value);
+    setOutput("");
+    setRunError("");
+    clearFixContext();
+  };
+
   const requestFix = useCallback(async (request: FixRequest) => {
     setIsFixing(true);
     setFixError("");
@@ -129,12 +115,13 @@ export default function Home() {
         );
       }
 
-      if (!isFixResult(data)) {
+      const parsedResult = fixResultSchema.safeParse(data);
+      if (!parsedResult.success) {
         throw new Error("Gemini returned an unexpected response. Please retry.");
       }
 
       setOriginalFixCode(request.code);
-      setFixResult(data);
+      setFixResult(parsedResult.data);
       setClarificationAnswer("");
     } catch (error) {
       setFixError(
@@ -148,9 +135,11 @@ export default function Home() {
   }, []);
 
   const handleFix = () => {
+    const executionOutput = [output, runError].filter(Boolean).join("\n");
     void requestFix({
       code,
       intendedBehavior,
+      ...(executionOutput ? { executionOutput: executionOutput.slice(-8_000) } : {}),
       ...(fixResult?.needsClarification && clarificationAnswer.trim()
         ? { followUpAnswer: clarificationAnswer.trim() }
         : {}),
@@ -231,7 +220,7 @@ export default function Home() {
                 language="python"
                 theme="vs-dark"
                 value={code}
-                onChange={(value) => setCode(value ?? "")}
+                onChange={(value) => handleCodeChange(value ?? "")}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
@@ -239,6 +228,7 @@ export default function Home() {
                   lineNumbers: "on",
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
+                  readOnly: isFixing,
                   tabSize: 4,
                   padding: { top: 18, bottom: 18 },
                 }}
@@ -298,26 +288,33 @@ export default function Home() {
             </div>
           </div>
           <p className="fix-description">
-            Explain what you expected, and Gemini will help you understand and
-            correct the code.
+            Your editor contents are included automatically. Describe what you
+            expected, and Gemini will help explain a focused fix.
           </p>
 
           <label className="field-label" htmlFor="intended-behavior">
-            What should the code do?
+            What should this code do?
           </label>
           <textarea
             id="intended-behavior"
             className="text-field"
             rows={4}
             value={intendedBehavior}
-            onChange={(event) => setIntendedBehavior(event.target.value)}
-            placeholder="Describe the expected result or the problem you noticed…"
+            placeholder="For example: calculate and display the average score."
+            onChange={(event) => {
+              setIntendedBehavior(event.target.value);
+              clearFixContext();
+            }}
             disabled={isFixing}
           />
 
           {fixResult?.needsClarification && (
             <div className="clarification-box" role="status">
               <p>{fixResult.question}</p>
+              <p className="clarification-hint">
+                Your current code and description are already included. Add only
+                the missing detail here.
+              </p>
               <label className="field-label" htmlFor="clarification-answer">
                 Your answer
               </label>
@@ -410,6 +407,10 @@ export default function Home() {
                   <p>{fixResult.concept}</p>
                 </div>
               )}
+              <div className="concept-card">
+                <span className="concept-label">Practice pattern</span>
+                <p>{fixResult.practiceType.replaceAll("_", " ")}</p>
+              </div>
               <button
                 className="button button-secondary apply-button"
                 onClick={() => {

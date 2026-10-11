@@ -10,10 +10,12 @@ The **Fix my code** action uses the `/api/fix` Gemini endpoint. Set
 environment-variable settings) before starting or deploying the app; the key
 is never sent to the browser. If intended behavior is unclear, the app asks a
 follow-up question. Suggested fixes include a summary, explained changes, and
-an underlying Python concept. Compare the original and corrected code, then
-use **Copy corrected code** to copy the suggestion. Failed requests show a
-readable error and a **Retry** action. **Load example** fills the editor and
-optional context fields with a sample bug to fix.
+an underlying Python concept and practice pattern. Compare the original and
+corrected code, then use **Copy corrected code** to copy the suggestion. Failed
+requests show a readable error and a **Retry** action. **Load example** fills
+the editor and optional context fields with a sample bug to fix.
+When you ask for a fix, the current editor code and any recent Python output or
+traceback are included automatically so you do not need to paste them again.
 
 ## Run locally
 
