@@ -1,0 +1,51 @@
+- generic [active] [ref=f23e1]:
+  - main [ref=f23e2]:
+    - generic [ref=f23e3]:
+      - link "Pyspace" [ref=f23e4] [cursor=pointer]:
+        - /url: /
+      - navigation "Main navigation" [ref=f23e9]:
+        - button "Fix code" [ref=f23e10] [cursor=pointer]
+        - button "Practice" [ref=f23e12] [cursor=pointer]
+        - button "Progress" [ref=f23e14] [cursor=pointer]
+      - generic [ref=f23e16]: Python runs locally in your browser
+    - region "Playground" [ref=f23e18]:
+      - generic [ref=f23e19]:
+        - paragraph [ref=f23e20]: Fix code
+        - heading "Find the bug. Fix it. Practice the pattern." [level=1] [ref=f23e21]
+        - paragraph [ref=f23e22]: Run your Python, get a focused correction, then practice a similar problem.
+      - generic [ref=f23e23]:
+        - generic [ref=f23e24]:
+          - generic [ref=f23e25]:
+            - generic [ref=f23e26]: main.py
+            - generic [ref=f23e27]: Python 3
+            - generic [ref=f23e28]:
+              - group [ref=f23e29]:
+                - generic "Load a bug example" [ref=f23e30] [cursor=pointer]
+              - button "Reset workspace" [ref=f23e31] [cursor=pointer]
+          - group [ref=f23e33]:
+            - generic "Optional function tests" [ref=f23e34] [cursor=pointer]
+          - generic [ref=f23e35]:
+            - paragraph [ref=f23e36]: Your code runs locally in your browser.
+            - generic [ref=f23e37]:
+              - button "Download" [ref=f23e38] [cursor=pointer]
+              - button "▶ Run code" [ref=f23e39] [cursor=pointer]
+          - region [ref=f23e40]:
+            - generic [ref=f23e41]:
+              - heading "Output" [level=2] [ref=f23e42]
+              - generic [ref=f23e43]: Console
+            - generic [ref=f23e44]: Run your code to see its output.
+        - complementary [ref=f23e45]:
+          - generic [ref=f23e46]:
+            - generic [ref=f23e47]: ✳
+            - generic [ref=f23e48]:
+              - paragraph [ref=f23e49]: Pair programmer
+              - heading "Fix my code" [level=2] [ref=f23e50]
+          - paragraph [ref=f23e51]: Your editor contents are included automatically. Describe what you expected, and Gemini will help explain a focused fix.
+          - generic [ref=f23e52]: What should this code do? Optional
+          - textbox "What should this code do? Optional" [ref=f23e53]:
+            - /placeholder: "For example: calculate and display the average score."
+          - group [ref=f23e54]:
+            - generic "Add an error or example (optional)" [ref=f23e55] [cursor=pointer]
+          - button "✳ Help me fix it" [ref=f23e56] [cursor=pointer]
+    - generic [ref=f23e57]: Made for the bugs that teach you something.
+  - button "Open Next.js Dev Tools" [ref=f23e63] [cursor=pointer]

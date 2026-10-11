@@ -1,0 +1,44 @@
+- generic [ref=f23e1]:
+  - main [ref=f23e2]:
+    - generic [ref=f23e3]:
+      - link "Pyspace" [ref=f23e4] [cursor=pointer]:
+        - /url: /
+      - navigation "Main navigation" [ref=f23e9]:
+        - button "Fix code" [ref=f23e10] [cursor=pointer]
+        - button "Practice" [ref=f23e12] [cursor=pointer]
+        - button "Progress" [active] [ref=f23e14] [cursor=pointer]
+      - generic [ref=f23e16]: Python runs locally in your browser
+    - region "Progress" [ref=f23e101]:
+      - region [ref=f23e102]:
+        - generic [ref=f23e103]:
+          - generic [ref=f23e104]:
+            - paragraph [ref=f23e105]: Your learning space
+            - heading "My Practice" [level=2] [ref=f23e106]
+            - paragraph [ref=f23e107]: See what you have worked on and choose a useful next step.
+          - button "Refresh" [ref=f23e108] [cursor=pointer]:
+            - generic [aria-hidden] [ref=f23e109]: ↻
+            - text: Refresh
+        - region [ref=f23e110]:
+          - paragraph [ref=f23e111]: Practice from your fixes
+          - heading "Frequent fix patterns" [level=3] [ref=f23e112]
+          - paragraph [ref=f23e113]: Bar lengths compare how often a correction matched each pattern.
+          - paragraph [ref=f23e114]: No fix patterns yet. When a correction matches a practice pattern, it will appear here.
+        - paragraph [ref=f23e115]: Patterns are AI-classified from Playground corrections and stored in this browser only. The latest 50 classifications are used; unclassified fixes are not counted.
+        - region [ref=f23e116]:
+          - paragraph [ref=f23e117]: Next practice
+          - generic [ref=f23e118]: Guided practice
+          - heading "Repair a running total" [level=3] [ref=f23e119]
+          - paragraph [ref=f23e120]: Your latest guided run did not pass. Try the guided exercise again.
+          - button "Start guided practice" [ref=f23e121] [cursor=pointer]:
+            - text: Start guided practice
+            - generic [aria-hidden] [ref=f23e122]: →
+        - group [ref=f23e123]:
+          - generic "Recent practice runs Showing up to 1 of the latest 50" [ref=f23e124] [cursor=pointer]:
+            - text: Recent practice runs
+            - generic [ref=f23e125]: Showing up to 1 of the latest 50
+    - generic [ref=f23e57]: Made for the bugs that teach you something.
+  - button "Open Next.js Dev Tools" [ref=f23e63] [cursor=pointer]
+  - alert [ref=f23e99]
+  - generic [ref=f23e100]:
+    - alert
+    - alert

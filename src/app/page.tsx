@@ -15,7 +15,6 @@ import {
   type PythonValue,
 } from "@/lib/pythonRunner";
 import {
-  exercises,
   getExercise,
   getLessonForConcept,
   lessons,
@@ -27,7 +26,16 @@ import {
   initializePracticeSession,
   type PracticeSessionStatus,
 } from "@/lib/practice-client";
-import type { PracticeRecommendation } from "@/lib/practice-recommendations";
+import {
+  MISTAKE_PATTERN_STORAGE_KEY,
+  appendMistakePatternEvent,
+  parseMistakePatternEvents,
+  serializeMistakePatternEvents,
+} from "@/lib/mistake-pattern-storage";
+import type {
+  PracticeConcept,
+  PracticeRecommendation,
+} from "@/lib/practice-recommendations";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -36,12 +44,48 @@ name = "world"
 print(f"Hello, {name}!")
 `;
 
-const averageExampleCode = `def average(numbers):
+const workspaceExamples = [
+  {
+    label: "Average",
+    code: `def average(numbers):
     return sum(numbers) / len(number)
 
 scores = [82, 91, 76]
-print(f"The average score is {average(scores):.1f}")
-`;
+print(f"The average score is {average(scores):.1f}")`,
+    intendedBehavior: "Calculate the average of the scores.",
+    errorMessage: "This example raises a NameError instead of printing 83.0.",
+    exampleArguments: "[[82, 91, 76]]",
+    expectedResult: "83.0",
+  },
+  {
+    label: "Running total",
+    code: `def sum_prices(prices):
+    total = 0
+    for price in prices:
+        total = price
+    return total
+
+print(sum_prices([4, 2, 3]))`,
+    intendedBehavior: "Add every price and print the total, 9.",
+    errorMessage: "This example prints 3 because each loop replaces the total.",
+    exampleArguments: "[[4, 2, 3]]",
+    expectedResult: "9",
+  },
+  {
+    label: "Range endpoint",
+    code: `def sum_to(limit):
+    total = 0
+    for number in range(1, limit):
+        total += number
+    return total
+
+print(sum_to(4))`,
+    intendedBehavior: "Add every number from 1 through 4 and print 10.",
+    errorMessage: "This example prints 6 because the range stops before 4.",
+    exampleArguments: "[4]",
+    expectedResult: "10",
+  },
+] as const;
 
 function canonicalize(value: PythonValue): string {
   if (Array.isArray(value)) {
@@ -75,18 +119,381 @@ type PendingPracticeSave = {
   error: string;
 };
 
-function WorkspaceHeader() {
+type WorkspaceView = "practice" | "playground" | "progress";
+
+function WorkspaceHeader({
+  activeView,
+  onViewChange,
+}: {
+  activeView: WorkspaceView;
+  onViewChange: (view: WorkspaceView) => void;
+}) {
+  const views: { id: WorkspaceView; label: string }[] = [
+    { id: "playground", label: "Fix code" },
+    { id: "practice", label: "Practice" },
+    { id: "progress", label: "Progress" },
+  ];
+
   return (
     <header className="topbar">
       <Link className="brand" href="/">
-        <span className="brand-mark">Py</span>
+        <span className="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M5 17c6-1 11-5 14-11 1 7-2 13-8 15-3 1-5-1-6-4Z" />
+            <path d="M7 19c3-4 6-6 10-8" />
+          </svg>
+        </span>
         Pyspace
       </Link>
+      <nav className="primary-nav" aria-label="Main navigation">
+        {views.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className={`nav-button ${activeView === view.id ? "nav-button-active" : ""}`}
+            aria-current={activeView === view.id ? "page" : undefined}
+            onClick={() => onViewChange(view.id)}
+          >
+            <span className="nav-icon" aria-hidden="true">
+              {view.id === "practice" ? (
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="m3 10 9-7 9 7v10h-6v-6H9v6H3z" />
+                </svg>
+              ) : view.id === "playground" ? (
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M4 5h16v14H4zM8 10l3 2-3 2M14 14h3" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M4 19V5M4 19h17M8 15v-4M13 15V7M18 15V4" />
+                </svg>
+              )}
+            </span>
+            <span className="nav-label">{view.label}</span>
+          </button>
+        ))}
+      </nav>
       <div className="topbar-note">
         <span className="status-dot" />
         Python runs locally in your browser
       </div>
     </header>
+  );
+}
+
+function PipArtwork({
+  className,
+  label,
+  decorative = false,
+}: {
+  className: string;
+  label: string;
+  decorative?: boolean;
+}) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 120 108"
+      role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : label}
+      aria-hidden={decorative || undefined}
+      shapeRendering="geometricPrecision"
+    >
+      <g className="pip-body">
+        <path
+          d="M68 66c-5 10-12 16-22 19-7 2-14-1-15-7-1-6 5-10 11-8 4 1 6 5 4 8"
+          fill="none"
+          stroke="#153b2e"
+          strokeLinecap="round"
+          strokeWidth="16"
+        />
+        <path
+          d="M68 66c-5 10-12 16-22 19-7 2-14-1-15-7-1-6 5-10 11-8 4 1 6 5 4 8"
+          fill="none"
+          stroke="#d5e98c"
+          strokeLinecap="round"
+          strokeWidth="10"
+        />
+        <path
+          d="M42 78c-2 3-1 6 2 7"
+          fill="none"
+          stroke="#eff6bd"
+          strokeLinecap="round"
+          strokeWidth="3"
+        />
+        <path
+          d="M65 61c2 5 5 8 9 11"
+          fill="none"
+          stroke="#153b2e"
+          strokeLinecap="round"
+          strokeWidth="15"
+        />
+        <path
+          d="M65 61c2 5 5 8 9 11"
+          fill="none"
+          stroke="#d5e98c"
+          strokeLinecap="round"
+          strokeWidth="9"
+        />
+        <path d="M57 68c3 4 7 7 12 9l-5 7c-5-2-10-6-13-10Z" fill="#f0a63d" />
+        <path d="M58 71c3 3 6 5 9 6" fill="none" stroke="#ffe7b6" strokeWidth="2" strokeLinecap="round" />
+      </g>
+      <g className="pip-head">
+        <path
+          d="M49 61c-5-6-7-14-5-22 2-11 12-18 24-18 11 0 19 6 21 15 1 5 5 7 11 7h8c4 0 6 2 6 5s-2 5-6 5H96c-4 8-13 12-24 12-9 0-16-2-23-4Z"
+          fill="#153b2e"
+          transform="translate(0 2)"
+        />
+        <path
+          d="M49 60c-5-6-7-14-5-22 2-11 12-18 24-18 11 0 19 6 21 15 1 5 5 7 11 7h8c4 0 6 2 6 5s-2 5-6 5H96c-4 8-13 12-24 12-9 0-16-2-23-4Z"
+          fill="#d5e98c"
+          stroke="#153b2e"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M53 54c5 4 11 6 18 6"
+          fill="none"
+          stroke="#f2f6bd"
+          strokeLinecap="round"
+          strokeWidth="4"
+        />
+        <path
+          d="M47 37c2-8 8-13 17-14"
+          fill="none"
+          stroke="#edf4b1"
+          strokeLinecap="round"
+          strokeWidth="3"
+        />
+      </g>
+      <g className="pip-face">
+        <ellipse cx="70" cy="36" rx="4" ry="5" fill="#fffdf2" />
+        <ellipse cx="87" cy="38" rx="4" ry="5" fill="#fffdf2" />
+        <circle cx="71" cy="37" r="1.8" fill="#183c32" />
+        <circle cx="88" cy="39" r="1.8" fill="#183c32" />
+        <circle cx="78" cy="47" r="2" fill="#e99b79" opacity=".9" />
+        <path
+          d="M77 49c3 2 6 2 9 0"
+          fill="none"
+          stroke="#153b2e"
+          strokeLinecap="round"
+          strokeWidth="1.8"
+        />
+        <circle cx="107" cy="47" r="1.2" fill="#153b2e" />
+      </g>
+      <g className="pip-accessory" aria-hidden="true">
+        <path
+          d="M53 21c2-7 8-11 15-11-1 7-5 12-12 14"
+          fill="#91c94e"
+          stroke="#153b2e"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <path d="M55 22c3-4 6-6 10-8" fill="none" stroke="#e9f5ae" strokeWidth="1.5" />
+        <path
+          d="M55 53c3 3 7 5 11 6"
+          fill="none"
+          stroke="#f0a63d"
+          strokeLinecap="round"
+          strokeWidth="2"
+        />
+      </g>
+    </svg>
+  );
+}
+
+type PipMood = "idle" | "thinking" | "encouraging" | "celebrating";
+
+function PipCompanion({
+  mood,
+  placement,
+  isOpen,
+  onToggle,
+  message,
+  hintAvailable,
+  canStartChallenge,
+  onRequestHint,
+  onStartChallenge,
+  onClose,
+}: {
+  mood: PipMood;
+  placement: "floating" | "inline";
+  isOpen: boolean;
+  onToggle: () => void;
+  message: string;
+  hintAvailable: boolean;
+  canStartChallenge: boolean;
+  onRequestHint: () => void;
+  onStartChallenge: () => void;
+  onClose: () => void;
+}) {
+  const moodLabels: Record<PipMood, string> = {
+    idle: "Pip is ready to help",
+    thinking: "Pip is thinking",
+    encouraging: "Pip is encouraging another try",
+    celebrating: "Pip is celebrating your passed tests",
+  };
+
+  return (
+    <aside
+      className={`pip-companion pip-companion-${placement} pip-companion-${mood}`}
+      aria-label="Pip, your Python companion"
+    >
+      <div className="pip-bubble" id="pip-message" hidden={!isOpen}>
+        <div className="pip-bubble-heading">
+          <span className="pip-status-dot" aria-hidden="true" />
+          <strong>Pip</strong>
+          <span className="pip-mood-label">{moodLabels[mood]}</span>
+          <button
+            className="pip-dismiss"
+            type="button"
+            aria-label="Close Pip’s message"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <p>{message}</p>
+        {hintAvailable ? (
+          <button
+            className="pip-hint-button"
+            type="button"
+            onClick={onRequestHint}
+          >
+            Show me a hint <span aria-hidden="true">→</span>
+          </button>
+        ) : canStartChallenge ? (
+          <button
+            className="pip-hint-button"
+            type="button"
+            onClick={onStartChallenge}
+          >
+            Pick a challenge <span aria-hidden="true">→</span>
+          </button>
+        ) : null}
+        {mood === "celebrating" && (
+          <span className="pip-confetti" aria-hidden="true">
+            ✦
+          </span>
+        )}
+      </div>
+      <button
+        className="pip-companion-button"
+        type="button"
+        aria-label={isOpen ? "Hide Pip’s message" : "Open Pip’s message"}
+        aria-expanded={isOpen}
+        aria-controls="pip-message"
+        onClick={onToggle}
+      >
+        <span className="pip-companion-halo" aria-hidden="true" />
+        <PipArtwork
+          className="pip-companion-art"
+          label=""
+          decorative
+        />
+        <span className="pip-companion-live" aria-hidden="true" />
+      </button>
+    </aside>
+  );
+}
+
+function PracticeHome({
+  recommendation,
+  onStartLesson,
+  onStartRecommendation,
+}: {
+  recommendation: PracticeRecommendation | null;
+  onStartLesson: (lesson: Lesson) => void;
+  onStartRecommendation: (recommendation: PracticeRecommendation) => void;
+}) {
+  const firstLesson = lessons[0];
+  const exercise = recommendation
+    ? getExercise(recommendation.exerciseId)
+    : getExercise(firstLesson.guidedExerciseId);
+
+  return (
+    <section className="practice-home" aria-labelledby="practice-home-title">
+      <section className="featured-challenge" aria-labelledby="practice-home-title">
+        <div className="featured-challenge-copy">
+          <span className="featured-label">
+            {recommendation ? "Your recommended next step" : "A good place to start"}
+          </span>
+          <span className="recommendation-type">
+            {recommendation
+              ? recommendation.attemptType === "guided"
+                ? "Guided practice"
+                : "Independent practice"
+              : "Guided practice"}
+          </span>
+          <h1 id="practice-home-title">Ready to grow your Python skills?</h1>
+          <p>
+            {recommendation?.reason ??
+              "Pip is here to help. Try one small Python challenge and learn as you go."}
+          </p>
+          <p className="featured-next-up">
+            Next up: <strong>{exercise?.title ?? "Choose a Python challenge"}</strong>
+          </p>
+          <button
+            className="button button-primary featured-challenge-action"
+            onClick={() => {
+              if (recommendation) onStartRecommendation(recommendation);
+              else onStartLesson(firstLesson);
+            }}
+          >
+            {recommendation?.attemptType === "independent"
+              ? "Continue independent practice"
+              : recommendation
+                ? "Start guided practice"
+                : "Start a guided challenge"}
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+        <div className="featured-challenge-art" aria-hidden="true">
+          <svg
+            className="pip-scene"
+            viewBox="0 0 260 220"
+          >
+            <circle cx="173" cy="108" r="83" fill="#205A43" />
+            <circle cx="206" cy="38" r="7" fill="#CDE77A" />
+            <circle cx="63" cy="105" r="4" fill="#82C891" />
+            <path d="m43 72 3-8 3 8 8 3-8 3-3 8-3-8-8-3Z" fill="#F1B14B" />
+            <path d="m223 144 3-8 3 8 8 3-8 3-3 8-3-8-8-3Z" fill="#82C891" />
+            <path d="M23 191c30-17 52-17 78-8" fill="none" stroke="#2B694F" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+          <PipArtwork
+            className="pip-scene-character"
+            label=""
+            decorative
+          />
+        </div>
+      </section>
+
+      <section className="concept-section" aria-labelledby="concept-section-title">
+        <div className="concept-section-heading">
+          <div>
+            <p className="eyebrow">Choose a pattern</p>
+            <h2 id="concept-section-title">Three useful things to practice</h2>
+          </div>
+          <span>Short lessons, real Python</span>
+        </div>
+        <div className="concept-grid">
+          {lessons.map((lesson, index) => (
+            <article className={`concept-tile concept-tile-${index + 1}`} key={lesson.id}>
+              <span className="concept-tile-number" aria-hidden="true">
+                0{index + 1}
+              </span>
+              <h3>{lesson.title}</h3>
+              <p>{lesson.explanation}</p>
+              <button
+                className="text-button concept-tile-action"
+                onClick={() => onStartLesson(lesson)}
+              >
+                Explore this pattern <span aria-hidden="true">→</span>
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
   );
 }
 
@@ -372,6 +779,7 @@ function PythonEditor({
 }
 
 export default function Home() {
+  const [activeView, setActiveView] = useState<WorkspaceView>("playground");
   const [code, setCode] = useState(starterCode);
   const [testCases, setTestCases] = useState("[]");
   const [exampleCasesText, setExampleCasesText] = useState("[]");
@@ -403,6 +811,8 @@ export default function Home() {
   const activeRunIdRef = useRef("");
 
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [recommendedPractice, setRecommendedPractice] =
+    useState<PracticeRecommendation | null>(null);
   const [prediction, setPrediction] = useState("");
   const [predictionSubmitted, setPredictionSubmitted] = useState(false);
   const [practiceExercise, setPracticeExercise] = useState<Exercise | null>(null);
@@ -413,6 +823,8 @@ export default function Home() {
   const [testOutput, setTestOutput] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   const [practiceComplete, setPracticeComplete] = useState(false);
+  const [pipIsOpen, setPipIsOpen] = useState(false);
+  const [pipCelebrating, setPipCelebrating] = useState(false);
   const [recommendedExerciseId, setRecommendedExerciseId] = useState<
     string | null
   >(null);
@@ -424,12 +836,93 @@ export default function Home() {
   const [pendingPracticeSaves, setPendingPracticeSaves] = useState<
     PendingPracticeSave[]
   >([]);
+  const [mistakePatternEvents, setMistakePatternEvents] = useState<
+    PracticeConcept[]
+  >([]);
+  const [patternTrackingStatus, setPatternTrackingStatus] = useState<
+    "loading" | "ready" | "unavailable"
+  >("loading");
+  const [patternTrackingNotice, setPatternTrackingNotice] = useState("");
   const [historyRefreshVersion, setHistoryRefreshVersion] = useState(0);
   const practiceSessionIdRef = useRef<string | null>(null);
+  const mistakePatternEventsRef = useRef<PracticeConcept[]>([]);
   const pendingPracticeSavesRef = useRef(
     new Map<string, PendingPracticeSave>(),
   );
   const savingAttemptIdsRef = useRef(new Set<string>());
+  const pipCelebrationTimerRef = useRef<number | null>(null);
+
+  function clearPipCelebration() {
+    if (pipCelebrationTimerRef.current !== null) {
+      window.clearTimeout(pipCelebrationTimerRef.current);
+      pipCelebrationTimerRef.current = null;
+    }
+    setPipCelebrating(false);
+  }
+
+  function startPipCelebration() {
+    clearPipCelebration();
+    setPipCelebrating(true);
+    pipCelebrationTimerRef.current = window.setTimeout(() => {
+      pipCelebrationTimerRef.current = null;
+      setPipCelebrating(false);
+    }, 1_800);
+  }
+
+  useEffect(
+    () => () => {
+      if (pipCelebrationTimerRef.current !== null) {
+        window.clearTimeout(pipCelebrationTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const parsed = parseMistakePatternEvents(
+          window.localStorage.getItem(MISTAKE_PATTERN_STORAGE_KEY),
+        );
+        mistakePatternEventsRef.current = parsed.events;
+        setMistakePatternEvents(parsed.events);
+        setPatternTrackingStatus("ready");
+        if (parsed.malformed) {
+          setPatternTrackingNotice(
+            "Saved pattern history could not be read. New repair patterns can still be tracked.",
+          );
+        }
+      } catch {
+        setPatternTrackingStatus("unavailable");
+        setPatternTrackingNotice(
+          "Browser storage is unavailable. Patterns can only be counted until you leave this page.",
+        );
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function recordMistakePattern(concept: PracticeConcept) {
+    const nextEvents = appendMistakePatternEvent(
+      mistakePatternEventsRef.current,
+      concept,
+    );
+    mistakePatternEventsRef.current = nextEvents;
+    setMistakePatternEvents(nextEvents);
+    try {
+      window.localStorage.setItem(
+        MISTAKE_PATTERN_STORAGE_KEY,
+        serializeMistakePatternEvents(nextEvents),
+      );
+      setPatternTrackingStatus("ready");
+      setPatternTrackingNotice("");
+    } catch {
+      setPatternTrackingStatus("unavailable");
+      setPatternTrackingNotice(
+        "Browser storage is unavailable. Patterns can only be counted until you leave this page.",
+      );
+    }
+  }
 
   const syncPendingPracticeSaves = useCallback(() => {
     setPendingPracticeSaves(
@@ -647,12 +1140,20 @@ export default function Home() {
     setRunError("Execution stopped.");
   }
 
-  function loadAverageExample() {
-    updateCode(averageExampleCode);
-    setIntendedBehavior("Calculate and display the average score.");
-    setExampleArguments("[[82, 91, 76]]");
-    setExpectedResult("83.0");
-    setErrorMessage("");
+  function loadWorkspaceExample(example: (typeof workspaceExamples)[number]) {
+    currentRunRef.current?.stop();
+    currentRunRef.current = null;
+    activeRunIdRef.current = "";
+    setIsRunning(false);
+    setIsLoadingPython(false);
+    updateCode(example.code);
+    setTestCases("[]");
+    setIntendedBehavior(example.intendedBehavior);
+    setExampleArguments(example.exampleArguments);
+    setExpectedResult(example.expectedResult);
+    setErrorMessage(example.errorMessage);
+    setOutput("");
+    setRunError("");
     setObservedError("");
   }
 
@@ -682,6 +1183,7 @@ export default function Home() {
     setTestFeedback("");
     setTestOutput("");
     setPracticeComplete(false);
+    clearPipCelebration();
     setRecommendedExerciseId(null);
     setOutput("");
     setRunError("");
@@ -728,6 +1230,12 @@ export default function Home() {
       if (!result.success) {
         setFixError("Gemini returned an incomplete correction. Please retry.");
         return;
+      }
+      if (
+        !result.data.needsClarification &&
+        result.data.practiceType !== "other"
+      ) {
+        recordMistakePattern(result.data.practiceType);
       }
       if (!result.data.needsClarification) setOriginalFixCode(values.code);
       setFixResult(result.data);
@@ -853,6 +1361,7 @@ export default function Home() {
   function openLesson(lesson: Lesson) {
     activeRunIdRef.current = "";
     currentRunRef.current?.stop();
+    setActiveView("practice");
     setSelectedLesson(lesson);
     setRecommendedExerciseId(null);
     setPrediction("");
@@ -864,6 +1373,7 @@ export default function Home() {
     setTestFeedback("");
     setTestOutput("");
     setPracticeComplete(false);
+    clearPipCelebration();
   }
 
   function startExercise(exercise: Exercise) {
@@ -875,11 +1385,13 @@ export default function Home() {
     setTestFeedback("");
     setTestOutput("");
     setPracticeComplete(false);
+    clearPipCelebration();
   }
 
   async function runPracticeTests() {
     if (!practiceExercise) return;
     const exercise = practiceExercise;
+    clearPipCelebration();
     const runId = crypto.randomUUID();
     const attempt = {
       attemptId: crypto.randomUUID(),
@@ -939,6 +1451,7 @@ export default function Home() {
         if (failed === -1 && result.results.length === exercise.tests.length) {
           outcome = "passed";
           setPracticeComplete(true);
+          startPipCelebration();
           setTestFeedback(
             `All ${exercise.tests.length} tests passed. Your solution handles the listed cases.`,
           );
@@ -973,9 +1486,11 @@ export default function Home() {
     activeRunIdRef.current = "";
     currentRunRef.current?.stop();
     setIsTesting(false);
+    clearPipCelebration();
     setSelectedLesson(null);
     setPracticeExercise(null);
     setRecommendedExerciseId(null);
+    setActiveView("practice");
   }
 
   function openRecommendedPractice(recommendation: PracticeRecommendation) {
@@ -988,13 +1503,58 @@ export default function Home() {
     setRecommendedExerciseId(exercise.id);
   }
 
+  function revealNextHint() {
+    if (!practiceExercise || practiceComplete) return;
+    setHintsRevealed((count) =>
+      Math.min(practiceExercise.hints.length, count + 1),
+    );
+    setPipIsOpen(true);
+  }
+
+  const pipMood: PipMood =
+    isTesting || isLoadingPython
+      ? "thinking"
+      : pipCelebrating
+        ? "celebrating"
+        : practiceExercise && testFeedback && !practiceComplete
+          ? "encouraging"
+          : "idle";
+  const latestHint =
+    practiceExercise && hintsRevealed > 0
+      ? practiceExercise.hints[hintsRevealed - 1]
+      : null;
+  const pipMessage =
+    pipMood === "thinking"
+      ? "Let’s give Python a moment to work through it."
+      : pipMood === "celebrating"
+        ? "Every test passed! You untangled that one."
+        : pipMood === "encouraging"
+          ? "A missed test is a clue, not a setback. Want a small nudge?"
+          : latestHint
+            ? `Hint ${hintsRevealed}: ${latestHint}`
+            : practiceExercise
+              ? "Try one change at a time. I can share a hint whenever you need it."
+              : "Hi, I’m Pip. Pick a pattern to explore, and I’ll be here if it gets tangled.";
+  const pipHintAvailable =
+    Boolean(practiceExercise) &&
+    !practiceComplete &&
+    hintsRevealed < (practiceExercise?.hints.length ?? 0);
+
   return (
     <main className="workspace">
-      <WorkspaceHeader />
+      <WorkspaceHeader
+        activeView={activeView}
+        onViewChange={setActiveView}
+      />
+      <section
+        className="app-view"
+        hidden={activeView !== "practice"}
+        aria-label="Practice"
+      >
       {selectedLesson ? (
         <section className="practice-view" aria-labelledby="practice-title">
           <button className="text-button practice-back" onClick={closePractice}>
-            ← Back to workspace
+            ← Back to practice
           </button>
           <p className="eyebrow">Pyspace lesson</p>
           <h1 id="practice-title">{selectedLesson.title}</h1>
@@ -1090,6 +1650,7 @@ export default function Home() {
                     setPracticeCode(value);
                     setTestFeedback("");
                     setPracticeComplete(false);
+                    clearPipCelebration();
                   }}
                   height="300px"
                 />
@@ -1104,11 +1665,7 @@ export default function Home() {
                 </button>
                 <button
                   className="button button-secondary"
-                  onClick={() =>
-                    setHintsRevealed((count) =>
-                      Math.min(practiceExercise.hints.length, count + 1),
-                    )
-                  }
+                  onClick={revealNextHint}
                   disabled={hintsRevealed >= practiceExercise.hints.length}
                 >
                   {hintsRevealed >= practiceExercise.hints.length
@@ -1212,27 +1769,87 @@ export default function Home() {
           )}
         </section>
       ) : (
+        <PracticeHome
+          recommendation={recommendedPractice}
+          onStartLesson={openLesson}
+          onStartRecommendation={openRecommendedPractice}
+        />
+      )}
+      </section>
+
+      {activeView === "practice" && (!selectedLesson || !practiceExercise) && (
+        <PipCompanion
+          mood={pipMood}
+          placement="floating"
+          isOpen={pipIsOpen}
+          onToggle={() => setPipIsOpen((open) => !open)}
+          message={pipMessage}
+          hintAvailable={pipHintAvailable}
+          canStartChallenge={!selectedLesson}
+          onRequestHint={revealNextHint}
+          onStartChallenge={() => {
+            if (recommendedPractice) {
+              openRecommendedPractice(recommendedPractice);
+            } else {
+              openLesson(lessons[0]);
+            }
+          }}
+          onClose={() => setPipIsOpen(false)}
+        />
+      )}
+      {activeView === "practice" && selectedLesson && practiceExercise && (
+        <PipCompanion
+          mood={pipMood}
+          placement="inline"
+          isOpen={pipIsOpen}
+          onToggle={() => setPipIsOpen((open) => !open)}
+          message={pipMessage}
+          hintAvailable={pipHintAvailable}
+          canStartChallenge={false}
+          onRequestHint={revealNextHint}
+          onStartChallenge={() => openLesson(lessons[0])}
+          onClose={() => setPipIsOpen(false)}
+        />
+      )}
+
+      {activeView === "playground" && (
+        <section className="app-view" aria-label="Playground">
         <>
-          <section className="intro">
-            <p className="eyebrow">Learn by doing</p>
-            <h1>Try an idea, run it in your browser</h1>
+          <section className="intro playground-intro">
+            <p className="eyebrow">Fix code</p>
+            <h1>Find the bug. Fix it. Practice the pattern.</h1>
             <p className="intro-copy">
-              Experiment with Python, then ask for a thoughtful fix when you get stuck.
+              Run your Python, get a focused correction, then practice a similar problem.
             </p>
           </section>
 
           <div className="workspace-grid">
             <section className="editor-column panel">
               <div className="panel-heading">
-                <span className="file-label">Pymain.py</span>
+                <span className="file-label">main.py</span>
                 <span className="python-badge">Python 3</span>
                 <div className="editor-heading-actions">
-                  <button
-                    className="button button-secondary example-button"
-                    onClick={loadAverageExample}
-                  >
-                    Load average example
-                  </button>
+                  <details className="example-picker">
+                    <summary className="button button-secondary example-button">
+                      Load a bug example
+                    </summary>
+                    <div
+                      className="example-picker-options"
+                      role="group"
+                      aria-label="Bug examples"
+                    >
+                      {workspaceExamples.map((example) => (
+                        <button
+                          key={example.label}
+                          type="button"
+                          className="text-button"
+                          onClick={() => loadWorkspaceExample(example)}
+                        >
+                          {example.label}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                   <button
                     className="button button-secondary example-button"
                     onClick={resetWorkspace}
@@ -1545,24 +2162,22 @@ export default function Home() {
                       </div>
                     )}
                   </details>
-                  {fixResult.concept && (
-                    <div className="concept-card">
-                      <span className="concept-label">Python concept</span>
-                      <p>{fixResult.concept}</p>
-                    </div>
-                  )}
-                  <p className="practice-pattern">
-                    Practice pattern: <strong>{fixResult.practiceType.replace("_", " ")}</strong>
-                  </p>
+                  <div className="related-practice">
+                    <span className="concept-label">Related bug pattern</span>
+                    <p>
+                      {getLessonForConcept(fixResult.practiceType)?.title ??
+                        fixResult.practiceType.replaceAll("_", " ")}
+                    </p>
+                  </div>
                   {getLessonForConcept(fixResult.practiceType) ? (
                     <button
-                      className="text-button practice-link"
+                      className="button button-secondary practice-link"
                       onClick={() => {
                         const lesson = getLessonForConcept(fixResult.practiceType);
                         if (lesson) openLesson(lesson);
                       }}
                     >
-                      Practice this mistake
+                      Practice this pattern
                     </button>
                   ) : (
                     <p className="practice-unavailable">
@@ -1581,34 +2196,27 @@ export default function Home() {
             </aside>
           </div>
 
-          <MyPractice
-            sessionStatus={practiceSessionStatus}
-            refreshVersion={historyRefreshVersion}
-            onRetrySession={retryPracticeSession}
-            onOpenRecommendation={openRecommendedPractice}
-          />
-
-          <section className="lesson-library" aria-labelledby="lessons-title">
-            <p className="eyebrow">Practice the patterns</p>
-            <h2 id="lessons-title">Lessons that make bugs teach you something</h2>
-            <div className="lesson-grid">
-              {lessons.map((lesson) => (
-                <article className="lesson-tile" key={lesson.id}>
-                  <h3>{lesson.title}</h3>
-                  <p>{lesson.explanation}</p>
-                  <button className="text-button" onClick={() => openLesson(lesson)}>
-                    Start lesson
-                  </button>
-                </article>
-              ))}
-            </div>
-            <p className="exercise-count">
-              {exercises.length} reviewed exercises with boundary-focused tests
-            </p>
-          </section>
-          <footer className="footer">Made for the bugs that teach you something.</footer>
         </>
+        </section>
       )}
+
+      <section
+        className="app-view"
+        hidden={activeView !== "progress"}
+        aria-label="Progress"
+      >
+        <MyPractice
+          sessionStatus={practiceSessionStatus}
+          refreshVersion={historyRefreshVersion}
+          onRetrySession={retryPracticeSession}
+          onOpenRecommendation={openRecommendedPractice}
+          onRecommendationChange={setRecommendedPractice}
+          mistakePatternEvents={mistakePatternEvents}
+          patternTrackingStatus={patternTrackingStatus}
+          patternTrackingNotice={patternTrackingNotice}
+        />
+      </section>
+      <footer className="footer">Made for the bugs that teach you something.</footer>
     </main>
   );
 }

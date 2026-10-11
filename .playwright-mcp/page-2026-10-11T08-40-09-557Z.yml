@@ -1,0 +1,65 @@
+- generic [ref=f24e1]:
+  - main [ref=f24e2]:
+    - generic [ref=f24e3]:
+      - link "Pyspace" [ref=f24e4] [cursor=pointer]:
+        - /url: /
+      - navigation "Main navigation" [ref=f24e9]:
+        - button "Fix code" [ref=f24e10] [cursor=pointer]
+        - button "Practice" [ref=f24e12] [cursor=pointer]
+        - button "Progress" [active] [ref=f24e14] [cursor=pointer]
+      - generic [ref=f24e16]: Python runs locally in your browser
+    - region "Progress" [ref=f24e101]:
+      - region [ref=f24e102]:
+        - generic [ref=f24e103]:
+          - generic [ref=f24e104]:
+            - paragraph [ref=f24e105]: Your learning space
+            - heading "My Practice" [level=2] [ref=f24e106]
+            - paragraph [ref=f24e107]: See what you have worked on and choose a useful next step.
+          - button "Refresh" [ref=f24e108] [cursor=pointer]:
+            - generic [aria-hidden] [ref=f24e109]: ↻
+            - text: Refresh
+        - region [ref=f24e110]:
+          - paragraph [ref=f24e111]: Practice from your fixes
+          - heading "Frequent fix patterns" [level=3] [ref=f24e112]
+          - paragraph [ref=f24e113]: Bar lengths compare how often a correction matched each pattern.
+          - list [ref=f24e114]:
+            - listitem [ref=f24e115]:
+              - generic [ref=f24e116]:
+                - strong [ref=f24e117]: Loops & totals
+                - generic [ref=f24e118]: Keep a running total or count as a loop handles each item. Start at the right value, then update the result instead of replacing it.
+                - progressbar "Loops & totals fix pattern frequency" [ref=f24e119]
+                - generic [ref=f24e120]: 2 of 4 recent classified corrections
+              - button "Practice this pattern" [ref=f24e121] [cursor=pointer]
+            - listitem [ref=f24e122]:
+              - generic [ref=f24e123]:
+                - strong [ref=f24e124]: Searching & stopping
+                - generic [ref=f24e125]: Keep checking after a mismatch. Return as soon as you find the answer, and use a fallback only after the search is over.
+                - progressbar "Searching & stopping fix pattern frequency" [ref=f24e126]
+                - generic [ref=f24e127]: 1 of 4 recent classified corrections
+              - button "Practice this pattern" [ref=f24e128] [cursor=pointer]
+            - listitem [ref=f24e129]:
+              - generic [ref=f24e130]:
+                - strong [ref=f24e131]: Counting & endpoints
+                - generic [ref=f24e132]: Python ranges include the start but stop before the end. Check the first and last values, especially when a range should include both ends.
+                - progressbar "Counting & endpoints fix pattern frequency" [ref=f24e133]
+                - generic [ref=f24e134]: 1 of 4 recent classified corrections
+              - button "Practice this pattern" [ref=f24e135] [cursor=pointer]
+        - paragraph [ref=f24e136]: Patterns are AI-classified from Playground corrections and stored in this browser only. The latest 50 classifications are used; unclassified fixes are not counted.
+        - region [ref=f24e137]:
+          - paragraph [ref=f24e138]: Next practice
+          - generic [ref=f24e139]: Guided practice
+          - heading "Repair a running total" [level=3] [ref=f24e140]
+          - paragraph [ref=f24e141]: Your latest guided run did not pass. Try the guided exercise again.
+          - button "Start guided practice" [ref=f24e142] [cursor=pointer]:
+            - text: Start guided practice
+            - generic [aria-hidden] [ref=f24e143]: →
+        - group [ref=f24e144]:
+          - generic "Recent practice runs Showing up to 1 of the latest 50" [ref=f24e145] [cursor=pointer]:
+            - text: Recent practice runs
+            - generic [ref=f24e146]: Showing up to 1 of the latest 50
+    - generic [ref=f24e57]: Made for the bugs that teach you something.
+  - button "Open Next.js Dev Tools" [ref=f24e63] [cursor=pointer]
+  - alert [ref=f24e99]
+  - generic [ref=f24e100]:
+    - alert
+    - alert

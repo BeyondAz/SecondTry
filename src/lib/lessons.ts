@@ -340,9 +340,9 @@ export const exercises: Exercise[] = [
 export const lessons: Lesson[] = [
   {
     id: "accumulator",
-    title: "Accumulation: keep a running result",
+    title: "Loops & totals",
     explanation:
-      "An accumulator stores a result that changes as a loop processes values. Start it at the appropriate identity value, then update it using its previous value on each iteration.",
+      "Keep a running total or count as a loop handles each item. Start at the right value, then update the result instead of replacing it.",
     prediction: {
       code: `total = 0
 for number in [3, -1, 2]:
@@ -356,9 +356,9 @@ print(total)`,
   },
   {
     id: "early_return",
-    title: "Early returns: stop when you know",
+    title: "Searching & stopping",
     explanation:
-      "A function can return as soon as it has enough information to answer. Keep checking after a non-match, and put the fallback return after the loop so it runs only when the loop finishes without a match.",
+      "Keep checking after a mismatch. Return as soon as you find the answer, and use a fallback only after the search is over.",
     prediction: {
       code: `def find_first(values, target):
     for index, value in enumerate(values):
@@ -375,9 +375,9 @@ print(find_first([4, 7, 9], 7))`,
   },
   {
     id: "off_by_one",
-    title: "Off-by-one: check loop endpoints",
+    title: "Counting & endpoints",
     explanation:
-      "Python's range includes its start but excludes its stop. For an inclusive end value, add one to the stop; then test the smallest range, a single-value range, and negative endpoints.",
+      "Python ranges include the start but stop before the end. Check the first and last values, especially when a range should include both ends.",
     prediction: {
       code: `for number in range(2, 5):
     print(number)`,

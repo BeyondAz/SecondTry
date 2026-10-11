@@ -1,6 +1,6 @@
 # Pyspace Python Playground
 
-Pyspace is a browser-based Python playground. Edit `Pymain.py` with Python
+Pyspace is a browser-based Python playground. Edit `main.py` with Python
 syntax highlighting and run it locally in an isolated Pyodide worker. Optional
 function tests accept JSON-compatible values; for example, with
 `def add(a, b): return a + b`, enter:
@@ -19,8 +19,8 @@ Python output or traceback are included automatically. You may optionally add
 the intended behavior, an error, example function arguments, and an expected
 result. If a detail is genuinely needed, the app asks a focused follow-up
 question. Suggested corrections include an explanation and practice pattern;
-review them before applying. **Load average example** inserts a broken
-average-score example and its expected behavior into the editor.
+review them before applying. **Load a bug example** inserts one of three small,
+reviewed examples (an average, a running total, or a range endpoint) to try.
 
 Suggested corrections can include optional example tests. Review expected
 values before using AI-suggested examples, then run the original and corrected
@@ -47,11 +47,22 @@ periodically (for example hourly from a trusted maintenance scheduler) to
 remove expired rows in bounded batches. Cleanup only deletes expired quota
 counters and does not affect learner or practice data.
 
-The Lessons section contains reviewed exercises for accumulators, early
-returns, and off-by-one errors. Each lesson starts with an output prediction,
+The Lessons section contains reviewed exercises for loops and totals, searching
+and stopping, and counting endpoints. Each lesson starts with an output prediction,
 then provides a guided repair, tests, progressive hints, reset, and an
 independent follow-up exercise. Test feedback and completion summaries are for
 practice and are not tamper-proof assessments.
+
+## Fix pattern tracking
+
+After a valid `/api/fix` response assigns a correction to one of the three
+practice patterns, Pyspace saves that category in this browser's local storage.
+It stores no code or error text and keeps only the latest 50 classified fixes.
+Fix patterns are separate from server-backed practice history, are not
+synchronized across browsers or devices, and are AI classifications rather than
+verified diagnoses. Clearing this browser's site data removes the saved
+patterns. If local storage is blocked or unreadable, the current page continues
+to work and shows a notice that tracking is temporary or unavailable.
 
 ## Persistent practice history
 

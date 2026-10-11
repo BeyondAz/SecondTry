@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getExercise, getLessonForConcept } from "@/lib/lessons";
+import { getExercise, getLessonForConcept, lessons } from "@/lib/lessons";
 import type {
   PracticeRecommendation,
   PracticeOutcome,
   PracticeAttemptType,
   PracticeConcept,
 } from "@/lib/practice-recommendations";
+import { getCommonMistakePatterns } from "@/lib/practice-recommendations";
 import type { PracticeSessionStatus } from "@/lib/practice-client";
 
 type HistoryAttempt = {
@@ -31,12 +32,6 @@ type HistoryData = {
   };
   recommendation: PracticeRecommendation | null;
 };
-
-const concepts: PracticeConcept[] = [
-  "accumulator",
-  "early_return",
-  "off_by_one",
-];
 
 const outcomeLabels: Record<PracticeOutcome, string> = {
   passed: "Passed",
@@ -79,11 +74,21 @@ export default function MyPractice({
   refreshVersion,
   onRetrySession,
   onOpenRecommendation,
+  onRecommendationChange,
+  mistakePatternEvents,
+  patternTrackingStatus,
+  patternTrackingNotice,
 }: {
   sessionStatus: PracticeSessionStatus;
   refreshVersion: number;
   onRetrySession: () => void;
   onOpenRecommendation: (recommendation: PracticeRecommendation) => void;
+  onRecommendationChange: (
+    recommendation: PracticeRecommendation | null,
+  ) => void;
+  mistakePatternEvents: readonly PracticeConcept[];
+  patternTrackingStatus: "loading" | "ready" | "unavailable";
+  patternTrackingNotice: string;
 }) {
   const [history, setHistory] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +114,10 @@ export default function MyPractice({
             : "Could not load your practice history.",
         );
       }
-      if (version === requestVersion.current) setHistory(body);
+      if (version === requestVersion.current) {
+        setHistory(body);
+        onRecommendationChange(body.recommendation);
+      }
     } catch (caught) {
       if (version === requestVersion.current) {
         setError(
@@ -121,7 +129,7 @@ export default function MyPractice({
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, []);
+  }, [onRecommendationChange]);
 
   useEffect(() => {
     if (sessionStatus !== "ready") {
@@ -136,6 +144,14 @@ export default function MyPractice({
   }, [loadHistory, refreshVersion, sessionStatus]);
 
   const recentAttempts = history?.attempts ?? [];
+  const commonPatterns = getCommonMistakePatterns(
+    mistakePatternEvents,
+    lessons.map(({ id, guidedExerciseId }) => ({
+      concept: id,
+      guidedExerciseId,
+    })),
+  );
+  const maxPatternCount = commonPatterns[0]?.fixCount ?? 0;
 
   return (
     <section className="my-practice" aria-labelledby="my-practice-title">
@@ -158,6 +174,73 @@ export default function MyPractice({
           </button>
         )}
       </div>
+
+      <section className="common-patterns-card" aria-labelledby="common-patterns-title">
+        <p className="eyebrow">Practice from your fixes</p>
+        <h3 id="common-patterns-title">Frequent fix patterns</h3>
+        <p className="common-patterns-intro">
+          Bar lengths compare how often a correction matched each pattern.
+        </p>
+        {patternTrackingNotice && (
+          <p className="pattern-tracking-notice" role="status">
+            {patternTrackingNotice}
+          </p>
+        )}
+        {patternTrackingStatus === "loading" ? (
+          <p className="common-patterns-empty">
+            Loading fix patterns saved in this browser…
+          </p>
+        ) : commonPatterns.length === 0 ? (
+          <p className="common-patterns-empty">
+            No fix patterns yet. When a correction matches a practice pattern, it will appear here.
+          </p>
+        ) : (
+          <ul className="common-pattern-list">
+            {commonPatterns.map((pattern) => {
+              const lesson = getLessonForConcept(pattern.concept);
+              return (
+                <li className="common-pattern" key={pattern.concept}>
+                  <div className="common-pattern-copy">
+                    <strong>{lesson?.title ?? pattern.concept}</strong>
+                    <span>{lesson?.explanation}</span>
+                    <progress
+                      className="pattern-meter"
+                      value={pattern.fixCount}
+                      max={maxPatternCount}
+                      aria-label={`${lesson?.title ?? pattern.concept} fix pattern frequency`}
+                      aria-valuetext={`${pattern.fixCount} of ${mistakePatternEvents.length} recent classified corrections`}
+                    />
+                    <small>
+                      {pattern.fixCount} of {mistakePatternEvents.length} recent{" "}
+                      {mistakePatternEvents.length === 1
+                        ? "classified correction"
+                        : "classified corrections"}
+                    </small>
+                  </div>
+                  <button
+                    className="button button-secondary common-pattern-action"
+                    onClick={() =>
+                      onOpenRecommendation({
+                        concept: pattern.concept,
+                        exerciseId: pattern.guidedExerciseId,
+                        attemptType: "guided",
+                        reason: "Practice this pattern with a guided exercise.",
+                      })
+                    }
+                  >
+                    Practice this pattern
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      <p className="practice-data-note">
+        Patterns are AI-classified from Playground corrections and stored in
+        this browser only. The latest 50 classifications are used; unclassified
+        fixes are not counted.
+      </p>
 
       {sessionStatus === "loading" && (
         <div className="history-state" role="status">
@@ -201,189 +284,84 @@ export default function MyPractice({
       )}
       {sessionStatus === "ready" && !loading && !error && history && (
         <>
-          <div className="practice-stats" aria-label="Practice summary">
-            <article className="practice-stat practice-stat-primary">
-              <span className="practice-stat-icon" aria-hidden="true">↗</span>
-              <div>
-                <strong>{history.summary.testRuns}</strong>
-                <span>test runs so far</span>
-              </div>
-            </article>
-            <article className="practice-stat">
-              <span className="practice-stat-icon practice-stat-icon-green" aria-hidden="true">✓</span>
-              <div>
-                <strong>{history.summary.independentPassesWithoutHints}</strong>
-                <span>independent passes, no hints</span>
-              </div>
-            </article>
-            <article className="practice-stat">
-              <span className="practice-stat-icon practice-stat-icon-amber" aria-hidden="true">↻</span>
-              <div>
-                <strong>{history.summary.failedIndependentRuns}</strong>
-                <span>independent runs that hit a snag</span>
-              </div>
-            </article>
-          </div>
-
-          <div className="practice-dashboard-grid">
-            <section className="practice-trail" aria-labelledby="practice-trail-title">
-              <div className="practice-section-heading">
-                <div>
-                  <h3 id="practice-trail-title">Your learning trail</h3>
-                  <p>Recent runs across the three practice patterns</p>
-                </div>
-                <span className="trail-window">Last {recentAttempts.length} runs</span>
-              </div>
-              {recentAttempts.length === 0 ? (
-                <div className="trail-empty">
-                  <span aria-hidden="true">✳</span>
-                  <div>
-                    <strong>Your story starts with one run</strong>
-                    <p>Choose a suggested exercise to record your first step here.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="concept-trails">
-                  {concepts.map((concept) => {
-                    const lesson = getLessonForConcept(concept);
-                    const attempts = recentAttempts
-                      .filter((attempt) => attempt.concept === concept)
-                      .slice(0, 12)
-                      .reverse();
-                    const latest = attempts[attempts.length - 1];
-                    return (
-                      <div className="concept-trail" key={concept}>
-                        <div className="concept-trail-heading">
-                          <div>
-                            <strong>{lesson?.title ?? concept.replace("_", " ")}</strong>
-                            <span>
-                              {attempts.length === 0
-                                ? "Not tried yet"
-                                : `${attempts.length} recent ${attempts.length === 1 ? "run" : "runs"}`}
-                            </span>
-                          </div>
-                          {latest && (
-                            <span className={`trail-latest trail-latest-${latest.outcome}`}>
-                              {outcomeLabels[latest.outcome]}
-                            </span>
-                          )}
-                        </div>
-                        {attempts.length > 0 ? (
-                          <div
-                            className="trail-dots"
-                            role="img"
-                            aria-label={`${attempts.length} runs; latest ${latest ? outcomeLabels[latest.outcome].toLowerCase() : ""}`}
-                          >
-                            {attempts.map((attempt) => (
-                              <span
-                                key={attempt.attemptId}
-                                className={`trail-dot trail-dot-${attempt.outcome}`}
-                                title={`${outcomeLabels[attempt.outcome]} · ${attemptTime(attempt.occurredAt)}`}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="trail-unstarted" aria-hidden="true">
-                            Start with a guided lesson
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <p className="trail-footnote">
-                Each mark is one browser-reported test run—not a score or mastery rating.
-              </p>
-            </section>
-
-            <section className="recommendation-card" aria-labelledby="next-practice-title">
-              <div className="recommendation-sparkle" aria-hidden="true">✳</div>
-              <p className="eyebrow">A good next step</p>
-              {history.recommendation ? (
-                <>
-                  <span className="recommendation-type">
-                    {history.recommendation.attemptType === "guided"
-                      ? "Guided practice"
-                      : "Independent practice"}
-                  </span>
-                  <h3 id="next-practice-title">
-                    {getExercise(history.recommendation.exerciseId)?.title ??
-                      "Recommended exercise"}
-                  </h3>
-                  <p>{history.recommendation.reason}</p>
-                  <button
-                    className="button button-primary recommendation-action"
-                    onClick={() => onOpenRecommendation(history.recommendation!)}
-                  >
-                    {history.recommendation.attemptType === "guided"
-                      ? "Start guided practice"
-                      : "Try it independently"}
-                    <span aria-hidden="true">→</span>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h3 id="next-practice-title">You’re all caught up</h3>
-                  <p>
-                    Nothing needs a retry right now. Unassisted independent
-                    passes become eligible for a revisit after 24 hours.
-                  </p>
-                  <span className="recommendation-resting">Come back when you’re ready</span>
-                </>
-              )}
-            </section>
-          </div>
-
-          <section className="history-list" aria-labelledby="recent-runs-title">
-            <div className="practice-section-heading history-list-heading">
-              <div>
-                <h3 id="recent-runs-title">Recent runs</h3>
-                <p>What happened in your latest practice sessions</p>
-              </div>
-              <span className="history-limit">Showing up to 50</span>
-            </div>
-            {recentAttempts.length === 0 ? (
-              <p className="history-message">
-                No saved runs yet. Your completed lesson tests will appear here.
-              </p>
+          <section className="recommendation-card" aria-labelledby="next-practice-title">
+            <p className="eyebrow">Next practice</p>
+            {history.recommendation ? (
+              <>
+                <span className="recommendation-type">
+                  {history.recommendation.attemptType === "guided"
+                    ? "Guided practice"
+                    : "Independent practice"}
+                </span>
+                <h3 id="next-practice-title">
+                  {getExercise(history.recommendation.exerciseId)?.title ??
+                    "Recommended exercise"}
+                </h3>
+                <p>{history.recommendation.reason}</p>
+                <button
+                  className="button button-primary recommendation-action"
+                  onClick={() => onOpenRecommendation(history.recommendation!)}
+                >
+                  {history.recommendation.attemptType === "guided"
+                    ? "Start guided practice"
+                    : "Try it independently"}
+                  <span aria-hidden="true">→</span>
+                </button>
+              </>
             ) : (
-              <ul>
-                {recentAttempts.map((attempt) => (
-                  <li key={attempt.attemptId}>
-                    <span
-                      className={`outcome-icon outcome-icon-${attempt.outcome}`}
-                      aria-hidden="true"
-                    >
-                      {attempt.outcome === "passed" ? "✓" : attempt.outcome === "failed" ? "↻" : "!"}
-                    </span>
-                    <div className="history-attempt-detail">
-                      <strong>
-                        {getExercise(attempt.exerciseId)?.title ?? "Reviewed exercise"}
-                      </strong>
-                      <span>
-                        {getLessonForConcept(attempt.concept)?.title ??
-                          attempt.concept.replace("_", " ")}
-                        <span aria-hidden="true"> · </span>
-                        {attempt.attemptType === "guided" ? "Guided" : "Independent"}
-                        <span aria-hidden="true"> · </span>
-                        {outcomeLabels[attempt.outcome]}
-                        {attempt.hintsUsed > 0 &&
-                          ` · ${attempt.hintsUsed} ${attempt.hintsUsed === 1 ? "hint" : "hints"}`}
-                      </span>
-                    </div>
-                    <time dateTime={attempt.occurredAt} title={attemptTime(attempt.occurredAt)}>
-                      {attemptTime(attempt.occurredAt)}
-                    </time>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <h3 id="next-practice-title">No retry needed right now</h3>
+                <p>
+                  Pick a pattern to review or return when you’re ready for another challenge.
+                </p>
+              </>
             )}
           </section>
-          <p className="practice-data-note">
-            These are practice events reported by your browser. They’re useful
-            for reflection, but aren’t verified assessments.
-          </p>
+
+          <details className="history-disclosure">
+            <summary>
+              Recent practice runs
+              <span>Showing up to {recentAttempts.length} of the latest 50</span>
+            </summary>
+            <section className="history-list" aria-label="Recent practice runs">
+              {recentAttempts.length === 0 ? (
+                <p className="history-message">
+                  No saved runs yet. Your completed lesson tests will appear here.
+                </p>
+              ) : (
+                <ul>
+                  {recentAttempts.map((attempt) => (
+                    <li key={attempt.attemptId}>
+                      <span
+                        className={`outcome-icon outcome-icon-${attempt.outcome}`}
+                        aria-hidden="true"
+                      >
+                        {attempt.outcome === "passed" ? "✓" : attempt.outcome === "failed" ? "↻" : "!"}
+                      </span>
+                      <div className="history-attempt-detail">
+                        <strong>
+                          {getExercise(attempt.exerciseId)?.title ?? "Reviewed exercise"}
+                        </strong>
+                        <span>
+                          {getLessonForConcept(attempt.concept)?.title ??
+                            attempt.concept.replace("_", " ")}
+                          <span aria-hidden="true"> · </span>
+                          {attempt.attemptType === "guided" ? "Guided" : "Independent"}
+                          <span aria-hidden="true"> · </span>
+                          {outcomeLabels[attempt.outcome]}
+                          {attempt.hintsUsed > 0 &&
+                            ` · ${attempt.hintsUsed} ${attempt.hintsUsed === 1 ? "hint" : "hints"}`}
+                        </span>
+                      </div>
+                      <time dateTime={attempt.occurredAt} title={attemptTime(attempt.occurredAt)}>
+                        {attemptTime(attempt.occurredAt)}
+                      </time>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </details>
         </>
       )}
     </section>

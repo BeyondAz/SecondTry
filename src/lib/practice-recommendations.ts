@@ -34,6 +34,12 @@ export type RecommendationExercise = {
   independentExerciseId: string;
 };
 
+export type CommonMistakePattern = {
+  concept: PracticeConcept;
+  fixCount: number;
+  guidedExerciseId: string;
+};
+
 export const REVISIT_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 const PRIORITY = {
@@ -50,6 +56,37 @@ const CONCEPT_ORDER: PracticeConcept[] = [
   "early_return",
   "off_by_one",
 ];
+
+export function getCommonMistakePatterns(
+  recentFixPatterns: readonly PracticeConcept[],
+  exerciseMap: readonly Pick<
+    RecommendationExercise,
+    "concept" | "guidedExerciseId"
+  >[],
+): CommonMistakePattern[] {
+  const patternCounts = new Map<PracticeConcept, number>();
+  for (const concept of recentFixPatterns) {
+    patternCounts.set(concept, (patternCounts.get(concept) ?? 0) + 1);
+  }
+
+  return Array.from(patternCounts, ([concept, fixCount]) => {
+    const exercise = exerciseMap.find((item) => item.concept === concept);
+    return exercise
+      ? {
+          concept,
+          fixCount,
+          guidedExerciseId: exercise.guidedExerciseId,
+        }
+      : null;
+  })
+    .filter((pattern): pattern is CommonMistakePattern => pattern !== null)
+    .sort(
+      (left, right) =>
+        right.fixCount - left.fixCount ||
+        CONCEPT_ORDER.indexOf(left.concept) -
+          CONCEPT_ORDER.indexOf(right.concept),
+    );
+}
 
 export function recommendPractice(
   latestAttempts: readonly RecommendationAttempt[],

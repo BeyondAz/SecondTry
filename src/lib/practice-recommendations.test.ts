@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getCommonMistakePatterns,
   recommendPractice,
   REVISIT_INTERVAL_MS,
   type RecommendationAttempt,
   type RecommendationExercise,
 } from "./practice-recommendations.ts";
+import {
+  appendMistakePatternEvent,
+  MAX_MISTAKE_PATTERN_EVENTS,
+  parseMistakePatternEvents,
+  serializeMistakePatternEvents,
+} from "./mistake-pattern-storage.ts";
 
 const exercises: RecommendationExercise[] = [
   {
@@ -228,4 +235,103 @@ test("unattempted lessons are a deterministic fallback when no revisit is due", 
   assert.equal(recommendation?.concept, "accumulator");
   assert.equal(recommendation?.exerciseId, "sum-numbers");
   assert.equal(recommendation?.attemptType, "guided");
+});
+
+test("common mistake patterns count saved Fix my code classifications and link to guided practice", () => {
+  const patterns = getCommonMistakePatterns(
+    [
+      "off_by_one",
+      "accumulator",
+      "accumulator",
+      "early_return",
+    ],
+    exercises,
+  );
+
+  assert.deepEqual(patterns, [
+    {
+      concept: "accumulator",
+      fixCount: 2,
+      guidedExerciseId: "sum-numbers",
+    },
+    {
+      concept: "early_return",
+      fixCount: 1,
+      guidedExerciseId: "find-first",
+    },
+    {
+      concept: "off_by_one",
+      fixCount: 1,
+      guidedExerciseId: "inclusive-range-sum",
+    },
+  ]);
+});
+
+test("common mistake pattern ties follow the stable concept order", () => {
+  const patterns = getCommonMistakePatterns(
+    ["off_by_one", "early_return", "accumulator"],
+    exercises,
+  );
+
+  assert.deepEqual(
+    patterns.map(({ concept }) => concept),
+    ["accumulator", "early_return", "off_by_one"],
+  );
+});
+
+test("local mistake history accepts versioned data and safely bounds stored events", () => {
+  const events: ("accumulator" | "off_by_one")[] = Array.from(
+    { length: MAX_MISTAKE_PATTERN_EVENTS + 3 },
+    (_, index) => (index % 2 === 0 ? "accumulator" : "off_by_one"),
+  );
+  const parsed = parseMistakePatternEvents(
+    serializeMistakePatternEvents(events),
+  );
+
+  assert.equal(parsed.malformed, false);
+  assert.deepEqual(
+    parsed.events,
+    events.slice(-MAX_MISTAKE_PATTERN_EVENTS),
+  );
+});
+
+test("missing or malformed local mistake history does not break practice", () => {
+  assert.deepEqual(parseMistakePatternEvents(null), {
+    events: [],
+    malformed: false,
+  });
+  assert.deepEqual(parseMistakePatternEvents("{not-json"), {
+    events: [],
+    malformed: true,
+  });
+  assert.deepEqual(
+    parseMistakePatternEvents(
+      JSON.stringify({ version: 2, events: ["accumulator"] }),
+    ),
+    { events: [], malformed: true },
+  );
+  assert.deepEqual(
+    parseMistakePatternEvents(
+      JSON.stringify({ version: 1, events: ["unknown"] }),
+    ),
+    { events: [], malformed: true },
+  );
+});
+
+test("local mistake history keeps only the latest 50 classifications", () => {
+  const events = Array.from({ length: MAX_MISTAKE_PATTERN_EVENTS }, () =>
+    "accumulator" as const,
+  );
+  assert.deepEqual(
+    appendMistakePatternEvent(events, "off_by_one").slice(0, 2),
+    ["accumulator", "accumulator"],
+  );
+  assert.equal(
+    appendMistakePatternEvent(events, "off_by_one").at(-1),
+    "off_by_one",
+  );
+  assert.equal(
+    appendMistakePatternEvent(events, "off_by_one").length,
+    MAX_MISTAKE_PATTERN_EVENTS,
+  );
 });
