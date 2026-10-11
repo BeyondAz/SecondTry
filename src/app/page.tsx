@@ -1,934 +1,1614 @@
 "use client";
 
 import dynamic from "next/dynamic";
-<<<<<<< HEAD
-import { useCallback, useRef, useState } from "react";
-import type { PyodideInterface } from "pyodide";
-
-const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
-const PYODIDE_INDEX_URL = "https://cdn.jsdelivr.net/npm/pyodide@314.0.7/";
-=======
 import Link from "next/link";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import MyPractice from "@/app/MyPractice";
 import {
   createPythonRun,
+  isPythonExampleCases,
   isPythonTestCases,
+  type ExampleExpectationSource,
+  type PythonExampleCase,
+  type PythonResponse,
   type PythonRun,
+  type PythonValue,
 } from "@/lib/pythonRunner";
+import {
+  exercises,
+  getExercise,
+  getLessonForConcept,
+  lessons,
+  type Exercise,
+  type Lesson,
+} from "@/lib/lessons";
+import { fixResultSchema, type FixRequest, type FixResult } from "@/lib/fix-schema";
+import {
+  initializePracticeSession,
+  type PracticeSessionStatus,
+} from "@/lib/practice-client";
+import type { PracticeRecommendation } from "@/lib/practice-recommendations";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
->>>>>>> 8b37a61 (10:48)
 
 const starterCode = `# Welcome to Pyspace
 name = "world"
 print(f"Hello, {name}!")
 `;
 
-<<<<<<< HEAD
-const exampleCode = `def average(numbers):
+const averageExampleCode = `def average(numbers):
     return sum(numbers) / len(number)
 
 scores = [82, 91, 76]
 print(f"The average score is {average(scores):.1f}")
 `;
 
-type FixRequest = {
-  code: string;
-  intendedBehavior: string;
-=======
-type FixRequest = {
-  code: string;
-  intendedBehavior: string;
-  errorMessage?: string;
-  exampleArguments?: string;
-  expectedResult?: string;
->>>>>>> 8b37a61 (10:48)
-  followUpAnswer?: string;
+function canonicalize(value: PythonValue): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalize).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function valueLabel(value: PythonValue | undefined): string {
+  return value === undefined ? "no result" : JSON.stringify(value);
+}
+
+type PracticeSavePayload = {
+  attemptId: string;
+  sessionId: string | null;
+  exerciseId: string;
+  hintsUsed: number;
+  outcome: "passed" | "failed" | "error" | "timed_out";
+  occurredAt: string;
 };
 
-type FixResult = {
-  needsClarification: boolean;
-  question: string | null;
-  correctedCode: string | null;
-  summary: string | null;
-  explanations: string[];
-  concept: string | null;
+type PendingPracticeSave = {
+  payload: PracticeSavePayload;
+  saving: boolean;
+  error: string;
 };
 
-function isFixResult(value: unknown): value is FixResult {
-  if (!value || typeof value !== "object") return false;
-
-  const result = value as Record<string, unknown>;
+function WorkspaceHeader() {
   return (
-    typeof result.needsClarification === "boolean" &&
-    (typeof result.question === "string" || result.question === null) &&
-    (typeof result.correctedCode === "string" ||
-      result.correctedCode === null) &&
-    (typeof result.summary === "string" || result.summary === null) &&
-    Array.isArray(result.explanations) &&
-    result.explanations.every((item) => typeof item === "string") &&
-    (typeof result.concept === "string" || result.concept === null)
+    <header className="topbar">
+      <Link className="brand" href="/">
+        <span className="brand-mark">Py</span>
+        Pyspace
+      </Link>
+      <div className="topbar-note">
+        <span className="status-dot" />
+        Python runs locally in your browser
+      </div>
+    </header>
   );
 }
 
-<<<<<<< HEAD
-export default function Home() {
-  const [code, setCode] = useState(starterCode);
-  const [intendedBehavior, setIntendedBehavior] = useState("");
-=======
-type DiffLine = {
-  kind: "added" | "removed" | "context";
-  text: string;
+function createNarrationAudio(
+  setIsPlaying: (playing: boolean) => void,
+  setError: (message: string) => void,
+) {
+  const audio = new Audio();
+  audio.addEventListener("ended", () => setIsPlaying(false));
+  audio.addEventListener("error", () => {
+    setIsPlaying(false);
+    setError("The generated audio could not be played.");
+  });
+  return audio;
+}
+
+function NarrationControls({ text }: { text: string }) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.src = "";
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    },
+    [],
+  );
+
+  async function playAudio(url: string) {
+    const audio =
+      audioRef.current ?? createNarrationAudio(setIsPlaying, setError);
+    audioRef.current = audio;
+    audio.pause();
+    audio.setAttribute("src", url);
+    audio.load();
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+      setError("Audio playback was blocked. Try pressing Listen again.");
+    }
+  }
+
+  async function listen() {
+    if (isGenerating || !text.trim()) return;
+    setError("");
+    if (audioUrl) {
+      await playAudio(audioUrl);
+      return;
+    }
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsGenerating(true);
+    try {
+      const response = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        const message =
+          body &&
+          typeof body === "object" &&
+          "error" in body &&
+          typeof body.error === "string"
+            ? body.error
+            : "Narration could not be generated right now. Please retry.";
+        throw new Error(message);
+      }
+
+      const url = URL.createObjectURL(await response.blob());
+      if (controller.signal.aborted) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      audioUrlRef.current = url;
+      setAudioUrl(url);
+      await playAudio(url);
+    } catch (caught) {
+      if (!controller.signal.aborted) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Narration could not be generated right now. Please retry.",
+        );
+      }
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsGenerating(false);
+      }
+    }
+  }
+
+  function stop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsGenerating(false);
+    audioRef.current?.pause();
+    audioRef.current?.load();
+    setIsPlaying(false);
+  }
+
+  return (
+    <div className="narration-controls" aria-label="Explanation audio controls">
+      <button
+        className="text-button"
+        onClick={() => void listen()}
+        disabled={isGenerating || !text.trim()}
+      >
+        {isGenerating ? "Loading audio…" : "Listen"}
+      </button>
+      <button
+        className="text-button"
+        onClick={stop}
+        disabled={!isGenerating && !isPlaying}
+      >
+        Stop
+      </button>
+      <button
+        className="text-button"
+        onClick={() => audioUrl && void playAudio(audioUrl)}
+        disabled={!audioUrl || isGenerating}
+      >
+        Replay
+      </button>
+      <span className="narration-status" aria-live="polite">
+        {error || (isPlaying ? "Playing explanation" : "")}
+      </span>
+    </div>
+  );
+}
+
+type ExampleOutcome = {
+  actual: PythonValue | null;
+  hasResult: boolean;
+  error: string | null;
 };
 
-function buildCodeDiff(original: string, corrected: string): DiffLine[] {
-  const oldLines = original.split("\n");
-  const newLines = corrected.split("\n");
-  if (oldLines.length > 300 || newLines.length > 300) {
-    return [
-      ...oldLines.map((text) => ({ kind: "removed" as const, text })),
-      ...newLines.map((text) => ({ kind: "added" as const, text })),
-    ];
-  }
+type ExampleSideResult = {
+  status: string;
+  outcomes: ExampleOutcome[];
+};
 
-  const lengths = Array.from(
-    { length: oldLines.length + 1 },
-    () => new Uint16Array(newLines.length + 1),
+type ExampleVerification = {
+  cases: PythonExampleCase[];
+  original: ExampleSideResult;
+  corrected: ExampleSideResult;
+};
+
+function stableJson(value: PythonValue): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function makeExampleSideResult(
+  response: PythonResponse,
+  cases: PythonExampleCase[],
+): ExampleSideResult {
+  const outcomes = cases.map((testCase, index) => {
+    const hasResult = index < response.results.length;
+    return {
+      actual: hasResult ? response.results[index] : null,
+      hasResult,
+      error:
+        response.error ??
+        response.testErrors[index] ??
+        (hasResult ? null : "No result was returned for this case."),
+    };
+  });
+
+  if (response.timedOut) {
+    return {
+      status: "Execution timed out",
+      outcomes: outcomes.map((outcome) => ({
+        ...outcome,
+        error: outcome.error ?? "Execution timed out.",
+      })),
+    };
+  }
+  if (response.error || outcomes.some((outcome) => outcome.error)) {
+    return { status: "Execution error", outcomes };
+  }
+  if (
+    outcomes.some(
+      (outcome, index) =>
+        !outcome.hasResult ||
+        stableJson(outcome.actual) !== stableJson(cases[index].expected),
+    )
+  ) {
+    return { status: "Failed an example test", outcomes };
+  }
+  return { status: `Passed ${cases.length} example tests`, outcomes };
+}
+
+function ExampleCaseResults({
+  cases,
+  outcomes,
+}: {
+  cases: PythonExampleCase[];
+  outcomes: ExampleOutcome[];
+}) {
+  return (
+    <div className="example-results-scroll">
+      <table className="example-results">
+        <thead>
+          <tr>
+            <th>Function</th>
+            <th>Arguments</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cases.map((testCase, index) => (
+            <tr key={`${testCase.functionName}-${index}`}>
+              <td><code>{testCase.functionName}</code></td>
+              <td><code>{JSON.stringify(testCase.args)}</code></td>
+              <td><code>{JSON.stringify(testCase.expected)}</code></td>
+              <td>
+                <code>
+                  {outcomes[index]?.hasResult
+                    ? JSON.stringify(outcomes[index].actual)
+                    : "—"}
+                </code>
+              </td>
+              <td className={outcomes[index]?.error ? "example-error" : ""}>
+                {outcomes[index]?.error ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
-  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
-    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
-      lengths[oldIndex][newIndex] =
-        oldLines[oldIndex] === newLines[newIndex]
-          ? lengths[oldIndex + 1][newIndex + 1] + 1
-          : Math.max(
-              lengths[oldIndex + 1][newIndex],
-              lengths[oldIndex][newIndex + 1],
-            );
-    }
-  }
+}
 
-  const diff: DiffLine[] = [];
-  let oldIndex = 0;
-  let newIndex = 0;
-  while (oldIndex < oldLines.length || newIndex < newLines.length) {
-    if (
-      oldIndex < oldLines.length &&
-      newIndex < newLines.length &&
-      oldLines[oldIndex] === newLines[newIndex]
-    ) {
-      diff.push({ kind: "context", text: oldLines[oldIndex] });
-      oldIndex += 1;
-      newIndex += 1;
-    } else if (
-      oldIndex < oldLines.length &&
-      (newIndex === newLines.length ||
-        lengths[oldIndex + 1][newIndex] >= lengths[oldIndex][newIndex + 1])
-    ) {
-      diff.push({ kind: "removed", text: oldLines[oldIndex] });
-      oldIndex += 1;
-    } else {
-      diff.push({ kind: "added", text: newLines[newIndex] });
-      newIndex += 1;
-    }
-  }
-  return diff;
+function PythonEditor({
+  value,
+  onChange,
+  height = "360px",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  height?: string;
+}) {
+  return (
+    <Editor
+      height={height}
+      language="python"
+      theme="vs-dark"
+      value={value}
+      onChange={(nextValue) => onChange(nextValue ?? "")}
+      options={{
+        automaticLayout: true,
+        fontSize: 14,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        tabSize: 4,
+        wordWrap: "on",
+        ariaLabel: "Python code editor",
+      }}
+    />
+  );
 }
 
 export default function Home() {
   const [code, setCode] = useState(starterCode);
   const [testCases, setTestCases] = useState("[]");
+  const [exampleCasesText, setExampleCasesText] = useState("[]");
+  const [expectationSource, setExpectationSource] =
+    useState<ExampleExpectationSource>("user-provided");
+  const [reviewedAiExpectations, setReviewedAiExpectations] = useState(false);
+  const [exampleCaseError, setExampleCaseError] = useState("");
+  const [isVerifyingExamples, setIsVerifyingExamples] = useState(false);
+  const [exampleVerification, setExampleVerification] =
+    useState<ExampleVerification | null>(null);
   const [intendedBehavior, setIntendedBehavior] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [exampleArguments, setExampleArguments] = useState("");
   const [expectedResult, setExpectedResult] = useState("");
->>>>>>> 8b37a61 (10:48)
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [fixResult, setFixResult] = useState<FixResult | null>(null);
-  const [originalFixCode, setOriginalFixCode] = useState<string | null>(null);
+  const [originalFixCode, setOriginalFixCode] = useState("");
   const [fixError, setFixError] = useState("");
   const [isFixing, setIsFixing] = useState(false);
   const [lastFixRequest, setLastFixRequest] = useState<FixRequest | null>(null);
   const [output, setOutput] = useState("");
   const [runError, setRunError] = useState("");
+  const [observedError, setObservedError] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingPython, setIsLoadingPython] = useState(false);
-<<<<<<< HEAD
-  const pyodideRef = useRef<PyodideInterface | null>(null);
+  const currentRunRef = useRef<PythonRun | null>(null);
+  const verificationRunRef = useRef<PythonRun | null>(null);
+  const verificationRequestIdRef = useRef(0);
+  const activeRunIdRef = useRef("");
 
-  const runCode = useCallback(async () => {
-    setIsRunning(true);
-    setOutput("");
-    setRunError("");
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [prediction, setPrediction] = useState("");
+  const [predictionSubmitted, setPredictionSubmitted] = useState(false);
+  const [practiceExercise, setPracticeExercise] = useState<Exercise | null>(null);
+  const [practiceCode, setPracticeCode] = useState("");
+  const [practiceAttempts, setPracticeAttempts] = useState(0);
+  const [hintsRevealed, setHintsRevealed] = useState(0);
+  const [testFeedback, setTestFeedback] = useState("");
+  const [testOutput, setTestOutput] = useState("");
+  const [isTesting, setIsTesting] = useState(false);
+  const [practiceComplete, setPracticeComplete] = useState(false);
+  const [recommendedExerciseId, setRecommendedExerciseId] = useState<
+    string | null
+  >(null);
+  const [practiceSessionStatus, setPracticeSessionStatus] =
+    useState<PracticeSessionStatus>("loading");
+  const [practiceSessionId, setPracticeSessionId] = useState<string | null>(
+    null,
+  );
+  const [pendingPracticeSaves, setPendingPracticeSaves] = useState<
+    PendingPracticeSave[]
+  >([]);
+  const [historyRefreshVersion, setHistoryRefreshVersion] = useState(0);
+  const practiceSessionIdRef = useRef<string | null>(null);
+  const pendingPracticeSavesRef = useRef(
+    new Map<string, PendingPracticeSave>(),
+  );
+  const savingAttemptIdsRef = useRef(new Set<string>());
 
-    try {
-      let pyodide = pyodideRef.current;
-      if (!pyodide) {
-        setIsLoadingPython(true);
-        const pyodideModuleUrl = new URL("pyodide.mjs", PYODIDE_INDEX_URL).href;
-        const { loadPyodide } = await import(
-          /* webpackIgnore: true */ /* turbopackIgnore: true */ pyodideModuleUrl
-        );
-        pyodide = await loadPyodide({ indexURL: PYODIDE_INDEX_URL });
-        pyodideRef.current = pyodide;
-      }
-
-      if (!pyodide) {
-        throw new Error("Python runtime did not initialize.");
-      }
-
-      pyodide.setStdout({
-        batched: (text) => setOutput((current) => `${current}${text}\n`),
-      });
-      pyodide.setStderr({
-        batched: (text) => setOutput((current) => `${current}${text}\n`),
-      });
-      await pyodide.runPythonAsync(code);
-=======
-  const pythonRunRef = useRef<PythonRun | null>(null);
-  const correctionRequestIdRef = useRef(0);
-  const editorRef = useRef<{ focus: () => void } | null>(null);
-
-  const invalidateCorrection = () => {
-    correctionRequestIdRef.current += 1;
-    setIsFixing(false);
-    setFixError("");
-    setFixResult(null);
-    setOriginalFixCode(null);
-    setLastFixRequest(null);
-    setClarificationAnswer("");
-  };
-
-  const clearExecutionResult = () => {
-    const activeRun = pythonRunRef.current;
-    pythonRunRef.current = null;
-    activeRun?.stop();
-    setIsLoadingPython(false);
-    setIsRunning(false);
-    setOutput("");
-    setRunError("");
-  };
-
-  const updateCode = (value: string) => {
-    if (value === code) return;
-    setCode(value);
-    clearExecutionResult();
-    invalidateCorrection();
-  };
-
-  const updateTestCases = (value: string) => {
-    if (value === testCases) return;
-    setTestCases(value);
-    clearExecutionResult();
-  };
-
-  const runCode = useCallback(async () => {
-    setOutput("");
-    setRunError("");
-    let activeRun: PythonRun | null = null;
-
-    try {
-      const parsedTestCases: unknown = JSON.parse(testCases);
-      if (!isPythonTestCases(parsedTestCases)) {
-        throw new Error(
-          "Tests must be a JSON array of up to 25 cases with a functionName and basic-type args.",
-        );
-      }
-
-      setIsRunning(true);
-      activeRun = createPythonRun(
-        {
-          requestId: crypto.randomUUID(),
-          code,
-          testCases: parsedTestCases,
-        },
-        setIsLoadingPython,
-      );
-      pythonRunRef.current = activeRun;
-      const response = await activeRun.promise;
-      if (pythonRunRef.current !== activeRun) return;
-      const resultsOutput =
-        response.results.length > 0
-          ? `Results:\n${response.results.map((result) => JSON.stringify(result)).join("\n")}`
-          : "";
-      setOutput(
-        [response.stdout, resultsOutput]
-          .filter(Boolean)
-          .join(response.stdout && !response.stdout.endsWith("\n") ? "\n" : ""),
-      );
-
-      if (response.error) setRunError(response.error);
->>>>>>> 8b37a61 (10:48)
-    } catch (error) {
-      setRunError(
-        error instanceof Error ? error.message : "Python could not be run.",
-      );
-    } finally {
-<<<<<<< HEAD
-      setIsLoadingPython(false);
-      setIsRunning(false);
-    }
-  }, [code]);
-
-  const requestFix = useCallback(async (request: FixRequest) => {
-=======
-      if (!activeRun || pythonRunRef.current === activeRun) {
-        setIsLoadingPython(false);
-        setIsRunning(false);
-        pythonRunRef.current = null;
-      }
-    }
-  }, [code, testCases]);
-
-  const requestFix = useCallback(async (request: FixRequest) => {
-    const requestId = correctionRequestIdRef.current + 1;
-    correctionRequestIdRef.current = requestId;
->>>>>>> 8b37a61 (10:48)
-    setIsFixing(true);
-    setFixError("");
-    setFixResult(null);
-    setLastFixRequest(request);
-
-    try {
-      const response = await fetch("/api/fix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request),
-      });
-      const data: unknown = await response.json();
-
-      if (!response.ok) {
-        const message =
-          data && typeof data === "object" && "error" in data
-            ? data.error
-            : undefined;
-        throw new Error(
-          typeof message === "string" && message
-            ? message
-            : "The fix request failed. Please try again.",
-        );
-      }
-
-      if (!isFixResult(data)) {
-        throw new Error("Gemini returned an unexpected response. Please retry.");
-      }
-
-<<<<<<< HEAD
-=======
-      if (correctionRequestIdRef.current !== requestId) return;
->>>>>>> 8b37a61 (10:48)
-      setOriginalFixCode(request.code);
-      setFixResult(data);
-      setClarificationAnswer("");
-    } catch (error) {
-<<<<<<< HEAD
-=======
-      if (correctionRequestIdRef.current !== requestId) return;
->>>>>>> 8b37a61 (10:48)
-      setFixError(
-        error instanceof Error
-          ? error.message
-          : "The fix request failed. Please try again.",
-      );
-    } finally {
-<<<<<<< HEAD
-      setIsFixing(false);
-=======
-      if (correctionRequestIdRef.current === requestId) {
-        setIsFixing(false);
-      }
->>>>>>> 8b37a61 (10:48)
-    }
+  const syncPendingPracticeSaves = useCallback(() => {
+    setPendingPracticeSaves(
+      Array.from(pendingPracticeSavesRef.current.values()),
+    );
   }, []);
 
-  const handleFix = () => {
-<<<<<<< HEAD
-    void requestFix({
-      code,
-      intendedBehavior,
-=======
-    if (!code.trim() || code.length > 20_000) {
-      setFixError("Enter nonblank code with no more than 20,000 characters.");
-      return;
-    }
-    if (!intendedBehavior.trim() || intendedBehavior.length > 3_000) {
-      setFixError(
-        "Describe the intended behavior in 3,000 characters or fewer.",
-      );
-      return;
-    }
-    if (
-      fixResult?.needsClarification &&
-      (!clarificationAnswer.trim() || clarificationAnswer.length > 3_000)
-    ) {
-      setFixError(
-        "Enter a clarification answer in 3,000 characters or fewer.",
-      );
-      return;
-    }
+  const savePendingPracticeAttempt = useCallback(
+    async (attemptId: string) => {
+      if (savingAttemptIdsRef.current.has(attemptId)) return;
+      const pending = pendingPracticeSavesRef.current.get(attemptId);
+      if (!pending) return;
+      const sessionId =
+        pending.payload.sessionId ?? practiceSessionIdRef.current;
+      if (!sessionId) {
+        pendingPracticeSavesRef.current.set(attemptId, {
+          ...pending,
+          saving: false,
+          error: "Practice history is not connected yet. Retry after reconnecting.",
+        });
+        syncPendingPracticeSaves();
+        return;
+      }
 
-    let normalizedArguments: string | undefined;
-    if (exampleArguments.trim()) {
+      const readyToSave = {
+        ...pending,
+        payload: { ...pending.payload, sessionId },
+        saving: true,
+        error: "",
+      };
+      pendingPracticeSavesRef.current.set(attemptId, readyToSave);
+      savingAttemptIdsRef.current.add(attemptId);
+      syncPendingPracticeSaves();
       try {
-        const parsed: unknown = JSON.parse(exampleArguments);
-        if (!Array.isArray(parsed)) {
-          throw new Error("Arguments must be a JSON array.");
+        const response = await fetch("/api/practice/attempts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(readyToSave.payload),
+        });
+        if (!response.ok) {
+          const body: unknown = await response.json().catch(() => null);
+          const message =
+            body &&
+            typeof body === "object" &&
+            "error" in body &&
+            typeof body.error === "string"
+              ? body.error
+              : "Could not save this practice run.";
+          throw new Error(message);
         }
-        normalizedArguments = JSON.stringify(parsed);
-      } catch {
-        setFixError("Example arguments must be a valid JSON array.");
-        return;
+        pendingPracticeSavesRef.current.delete(attemptId);
+        setHistoryRefreshVersion((version) => version + 1);
+      } catch (error) {
+        pendingPracticeSavesRef.current.set(attemptId, {
+          ...readyToSave,
+          saving: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not save this practice run.",
+        });
+      } finally {
+        savingAttemptIdsRef.current.delete(attemptId);
+        syncPendingPracticeSaves();
       }
-    }
+    },
+    [syncPendingPracticeSaves],
+  );
 
-    let normalizedExpectedResult: string | undefined;
-    if (expectedResult.trim()) {
-      try {
-        normalizedExpectedResult = JSON.stringify(JSON.parse(expectedResult));
-      } catch {
-        setFixError("Expected result must be valid JSON.");
-        return;
-      }
-    }
+  const acceptPracticeSession = useCallback((sessionId: string | null) => {
+    if (!sessionId) return;
+    practiceSessionIdRef.current = sessionId;
+    setPracticeSessionId(sessionId);
+    setPracticeSessionStatus("ready");
+  }, []);
 
-    void requestFix({
-      code,
-      intendedBehavior,
-      ...(errorMessage.trim() ? { errorMessage: errorMessage.trim() } : {}),
-      ...(normalizedArguments !== undefined
-        ? { exampleArguments: normalizedArguments }
-        : {}),
-      ...(normalizedExpectedResult !== undefined
-        ? { expectedResult: normalizedExpectedResult }
-        : {}),
->>>>>>> 8b37a61 (10:48)
-      ...(fixResult?.needsClarification && clarificationAnswer.trim()
-        ? { followUpAnswer: clarificationAnswer.trim() }
-        : {}),
+  useEffect(() => {
+    let mounted = true;
+    void initializePracticeSession((status) => {
+      if (mounted) setPracticeSessionStatus(status);
+    }).then((sessionId) => {
+      if (!mounted) return;
+      if (sessionId) acceptPracticeSession(sessionId);
+      else setPracticeSessionStatus("unavailable");
     });
-  };
+    return () => {
+      mounted = false;
+      activeRunIdRef.current = "";
+      currentRunRef.current?.stop();
+    };
+  }, [acceptPracticeSession]);
 
-  const loadExample = () => {
-<<<<<<< HEAD
-    setCode(exampleCode);
-    setIntendedBehavior("Calculate and display the average score.");
-=======
-    cancelCode();
-    invalidateCorrection();
-    setCode(`def sum_numbers(numbers):
-    total = 0
-    for number in numbers:
-        total = number
-    return total
-`);
-    setTestCases("[]");
-    setIntendedBehavior(
-      "Return the sum of all numbers in the list, adding each number to the running total.",
+  useEffect(() => {
+    if (!practiceSessionId) return;
+    for (const [attemptId, pending] of pendingPracticeSavesRef.current) {
+      if (!pending.payload.sessionId) {
+        void savePendingPracticeAttempt(attemptId);
+      }
+    }
+  }, [practiceSessionId, savePendingPracticeAttempt]);
+
+  function retryPracticeSession() {
+    setPracticeSessionStatus("loading");
+    void initializePracticeSession(setPracticeSessionStatus).then(
+      (sessionId) => {
+        if (sessionId) acceptPracticeSession(sessionId);
+        else setPracticeSessionStatus("unavailable");
+      },
     );
-    setErrorMessage("");
-    setExampleArguments("[[2, 3, 4]]");
-    setExpectedResult("9");
->>>>>>> 8b37a61 (10:48)
-    setClarificationAnswer("");
+  }
+
+  function retryPendingPracticeSave(attemptId: string) {
+    void savePendingPracticeAttempt(attemptId);
+  }
+
+  function queuePracticeAttempt(payload: PracticeSavePayload) {
+    if (pendingPracticeSavesRef.current.has(payload.attemptId)) return;
+    pendingPracticeSavesRef.current.set(payload.attemptId, {
+      payload,
+      saving: false,
+      error: "",
+    });
+    syncPendingPracticeSaves();
+    void savePendingPracticeAttempt(payload.attemptId);
+  }
+
+  function clearExampleVerification() {
+    verificationRequestIdRef.current += 1;
+    const activeRun = verificationRunRef.current;
+    verificationRunRef.current = null;
+    activeRun?.stop();
+    setIsVerifyingExamples(false);
+    setExampleVerification(null);
+  }
+
+  function clearFixState() {
+    clearExampleVerification();
+    setExampleCasesText("[]");
+    setExpectationSource("user-provided");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
     setFixResult(null);
-    setOriginalFixCode(null);
+    setOriginalFixCode("");
     setFixError("");
+    setClarificationAnswer("");
+    setLastFixRequest(null);
+  }
+
+  function updateCode(nextCode: string) {
+    setCode(nextCode);
+    clearFixState();
+  }
+
+  async function runCode() {
+    let cases: unknown;
+    try {
+      cases = JSON.parse(testCases);
+    } catch {
+      setRunError("Test cases must be valid JSON.");
+      return;
+    }
+    if (!isPythonTestCases(cases)) {
+      setRunError(
+        "Test cases must be a JSON array of function calls with valid function names and JSON arguments.",
+      );
+      return;
+    }
+
+    const runId = crypto.randomUUID();
+    activeRunIdRef.current = runId;
+    setIsRunning(true);
+    setRunError("");
+    setOutput("");
+    setObservedError("");
+    setOutput("Preparing the browser Python runtime…");
+    const run = createPythonRun(
+      {
+        requestId: runId,
+        mode: cases.length > 0 ? "tests" : "script",
+        code,
+        testCases: cases,
+      },
+      setIsLoadingPython,
+    );
+    currentRunRef.current = run;
+    try {
+      const result = await run.promise;
+      if (activeRunIdRef.current !== runId) return;
+      setOutput(
+        result.outputTruncated
+          ? `${result.stdout}\n… output truncated …`
+          : result.stdout,
+      );
+      const testError = result.testErrors.find(
+        (testError): testError is string => testError !== null,
+      );
+      const error = result.error ?? (testError ? `Function test error: ${testError}` : "");
+      setRunError(error);
+      setObservedError(error);
+    } finally {
+      if (activeRunIdRef.current === runId) {
+        currentRunRef.current = null;
+        setIsRunning(false);
+        setIsLoadingPython(false);
+      }
+    }
+  }
+
+  function stopRun() {
+    currentRunRef.current?.stop();
+    currentRunRef.current = null;
+    activeRunIdRef.current = "";
+    setIsRunning(false);
+    setIsLoadingPython(false);
+    setRunError("Execution stopped.");
+  }
+
+  function loadAverageExample() {
+    updateCode(averageExampleCode);
+    setIntendedBehavior("Calculate and display the average score.");
+    setExampleArguments("[[82, 91, 76]]");
+    setExpectedResult("83.0");
+    setErrorMessage("");
+    setObservedError("");
+  }
+
+  function resetWorkspace() {
+    stopRun();
+    clearFixState();
+    setIsTesting(false);
+    setIsRunning(false);
+    setIsLoadingPython(false);
+    setCode(starterCode);
+    setTestCases("[]");
+    setIntendedBehavior("");
+    setErrorMessage("");
+    setExampleArguments("");
+    setExpectedResult("");
+    setClarificationAnswer("");
     setOutput("");
     setRunError("");
-  };
+    setObservedError("");
+    setSelectedLesson(null);
+    setPrediction("");
+    setPredictionSubmitted(false);
+    setPracticeExercise(null);
+    setPracticeCode("");
+    setPracticeAttempts(0);
+    setHintsRevealed(0);
+    setTestFeedback("");
+    setTestOutput("");
+    setPracticeComplete(false);
+    setRecommendedExerciseId(null);
+    setOutput("");
+    setRunError("");
+  }
 
-<<<<<<< HEAD
-=======
-  const stopCode = () => pythonRunRef.current?.stop();
-
-  const cancelCode = () => {
-    const activeRun = pythonRunRef.current;
-    pythonRunRef.current = null;
-    activeRun?.stop();
-    setIsLoadingPython(false);
-    setIsRunning(false);
-  };
-
-  const diffLines =
-    originalFixCode !== null && fixResult?.correctedCode
-      ? buildCodeDiff(originalFixCode, fixResult.correctedCode)
-      : [];
-
->>>>>>> 8b37a61 (10:48)
-  const downloadCode = () => {
-    const file = new Blob([code], { type: "text/x-python;charset=utf-8" });
-    const url = URL.createObjectURL(file);
+  function downloadCode() {
+    const url = URL.createObjectURL(
+      new Blob([code], { type: "text/x-python;charset=utf-8" }),
+    );
     const link = document.createElement("a");
     link.href = url;
     link.download = "main.py";
     link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
 
-  const copyCorrectedCode = async () => {
-    if (!fixResult?.correctedCode) return;
+  async function sendFixRequest(values: FixRequest) {
+    clearExampleVerification();
+    setExampleCasesText("[]");
+    setExpectationSource("user-provided");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
+    setIsFixing(true);
+    setFixError("");
+    setFixResult(null);
+    setLastFixRequest(values);
+    try {
+      const response = await fetch("/api/fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          body && typeof body === "object" && "error" in body &&
+          typeof body.error === "string"
+            ? body.error
+            : "Gemini could not complete the fix. Please retry.";
+        setFixError(message);
+        return;
+      }
+      const result = fixResultSchema.safeParse(body);
+      if (!result.success) {
+        setFixError("Gemini returned an incomplete correction. Please retry.");
+        return;
+      }
+      if (!result.data.needsClarification) setOriginalFixCode(values.code);
+      setFixResult(result.data);
+    } catch {
+      setFixError("Could not reach Gemini. Check your connection and retry.");
+    } finally {
+      setIsFixing(false);
+    }
+  }
+
+  function requestFix() {
+    void sendFixRequest({
+      code,
+      intendedBehavior,
+      executionOutput: [output, runError].filter(Boolean).join("\n"),
+      errorMessage: errorMessage || observedError || undefined,
+      exampleArguments: exampleArguments || undefined,
+      expectedResult: expectedResult || undefined,
+    });
+  }
+
+  async function verifyExamples() {
+    if (
+      !originalFixCode ||
+      !fixResult ||
+      fixResult.needsClarification ||
+      isVerifyingExamples
+    ) {
+      return;
+    }
+    if (expectationSource === "AI-suggested" && !reviewedAiExpectations) {
+      setExampleCaseError(
+        "Review the AI-suggested expected values before using them as test targets.",
+      );
+      return;
+    }
+
+    let parsedCases: unknown;
+    try {
+      parsedCases = JSON.parse(exampleCasesText);
+    } catch {
+      setExampleCaseError("Example tests must be valid JSON.");
+      return;
+    }
+    if (!isPythonExampleCases(parsedCases)) {
+      setExampleCaseError(
+        "Enter 1–25 cases with a functionName, positional args array, and JSON expected value.",
+      );
+      return;
+    }
+
+    const cases = parsedCases;
+    setExampleCaseError("");
+    setExampleVerification(null);
+    setIsVerifyingExamples(true);
+    const verificationId = verificationRequestIdRef.current + 1;
+    verificationRequestIdRef.current = verificationId;
+
+    async function runAgainstExamples(sourceCode: string) {
+      const run = createPythonRun(
+        {
+          requestId: crypto.randomUUID(),
+          mode: "examples",
+          code: sourceCode,
+          testCases: cases.map(({ functionName, args }) => ({
+            functionName,
+            args,
+          })),
+        },
+        () => {},
+      );
+      verificationRunRef.current = run;
+      try {
+        return makeExampleSideResult(await run.promise, cases);
+      } finally {
+        if (verificationRunRef.current === run) {
+          verificationRunRef.current = null;
+        }
+      }
+    }
 
     try {
-      await navigator.clipboard.writeText(fixResult.correctedCode);
-    } catch {
-      setFixError("Could not copy the corrected code. Please copy it manually.");
+      const original = await runAgainstExamples(originalFixCode);
+      if (verificationRequestIdRef.current !== verificationId) return;
+      const corrected = await runAgainstExamples(fixResult.correctedCode);
+      if (verificationRequestIdRef.current !== verificationId) return;
+      setExampleVerification({ cases, original, corrected });
+    } catch (error) {
+      if (verificationRequestIdRef.current === verificationId) {
+        setExampleCaseError(
+          error instanceof Error
+            ? error.message
+            : "Python could not run these examples.",
+        );
+      }
+    } finally {
+      if (verificationRequestIdRef.current === verificationId) {
+        verificationRunRef.current = null;
+        setIsVerifyingExamples(false);
+      }
     }
-  };
+  }
+
+  function useAiSuggestedExamples() {
+    if (!fixResult || fixResult.needsClarification || !fixResult.exampleTests.length) {
+      return;
+    }
+    setExampleCasesText(JSON.stringify(fixResult.exampleTests, null, 2));
+    setExpectationSource("AI-suggested");
+    setReviewedAiExpectations(false);
+    setExampleCaseError("");
+    clearExampleVerification();
+  }
+
+  function answerClarification() {
+    if (!lastFixRequest || !clarificationAnswer.trim()) return;
+    void sendFixRequest({
+      ...lastFixRequest,
+      followUpAnswer: clarificationAnswer.trim(),
+    });
+  }
+
+  function openLesson(lesson: Lesson) {
+    activeRunIdRef.current = "";
+    currentRunRef.current?.stop();
+    setSelectedLesson(lesson);
+    setRecommendedExerciseId(null);
+    setPrediction("");
+    setPredictionSubmitted(false);
+    setPracticeExercise(null);
+    setPracticeCode("");
+    setPracticeAttempts(0);
+    setHintsRevealed(0);
+    setTestFeedback("");
+    setTestOutput("");
+    setPracticeComplete(false);
+  }
+
+  function startExercise(exercise: Exercise) {
+    setPracticeExercise(exercise);
+    setRecommendedExerciseId(null);
+    setPracticeCode(exercise.starterCode);
+    setPracticeAttempts(0);
+    setHintsRevealed(0);
+    setTestFeedback("");
+    setTestOutput("");
+    setPracticeComplete(false);
+  }
+
+  async function runPracticeTests() {
+    if (!practiceExercise) return;
+    const exercise = practiceExercise;
+    const runId = crypto.randomUUID();
+    const attempt = {
+      attemptId: crypto.randomUUID(),
+      sessionId: practiceSessionIdRef.current,
+      exerciseId: exercise.id,
+      hintsUsed: hintsRevealed,
+      occurredAt: new Date().toISOString(),
+    };
+    activeRunIdRef.current = runId;
+    setPracticeAttempts((count) => count + 1);
+    setIsTesting(true);
+    setTestFeedback("Running the exercise tests in your browser…");
+    setTestOutput("");
+    let outcome: PracticeSavePayload["outcome"] | null = null;
+    try {
+      const run = createPythonRun(
+        {
+          requestId: runId,
+          mode: "tests",
+          code: practiceCode,
+          testCases: exercise.tests.map((test) => ({
+            functionName: exercise.functionName,
+            args: test.args,
+          })),
+        },
+        setIsLoadingPython,
+      );
+      currentRunRef.current = run;
+      const result = await run.promise;
+      if (activeRunIdRef.current !== runId) return;
+      setTestOutput(
+        result.outputTruncated
+          ? `${result.stdout}\n… output truncated …`
+          : result.stdout,
+      );
+      if (result.timedOut) {
+        outcome = "timed_out";
+        setTestFeedback("Python execution timed out. Adjust the code and try again.");
+        setPracticeComplete(false);
+      } else if (result.error) {
+        outcome = "error";
+        setTestFeedback(`Python error: ${result.error}`);
+        setPracticeComplete(false);
+      } else if (result.testErrors.some(Boolean)) {
+        outcome = "error";
+        const failedError = result.testErrors.find(
+          (testError): testError is string => testError !== null,
+        );
+        setTestFeedback(`Python error: ${failedError ?? "A test could not run."}`);
+        setPracticeComplete(false);
+      } else {
+        const failed = exercise.tests.findIndex(
+        (test, index) =>
+          index >= result.results.length ||
+          canonicalize(test.expected) !== canonicalize(result.results[index]),
+        );
+        if (failed === -1 && result.results.length === exercise.tests.length) {
+          outcome = "passed";
+          setPracticeComplete(true);
+          setTestFeedback(
+            `All ${exercise.tests.length} tests passed. Your solution handles the listed cases.`,
+          );
+        } else {
+          outcome = "failed";
+          const failedIndex = Math.max(failed, 0);
+          const test = exercise.tests[failedIndex];
+          setPracticeComplete(false);
+          setTestFeedback(
+            `Test failed: ${test.name}. Expected ${valueLabel(test.expected)}; received ${valueLabel(result.results[failedIndex])}.`,
+          );
+        }
+      }
+    } catch {
+      if (activeRunIdRef.current !== runId) return;
+      outcome = "error";
+      setPracticeComplete(false);
+      setTestFeedback("Python could not complete this test run. Please retry.");
+    } finally {
+      if (activeRunIdRef.current === runId) {
+        currentRunRef.current = null;
+        setIsTesting(false);
+        setIsLoadingPython(false);
+      }
+    }
+    if (activeRunIdRef.current === runId && outcome) {
+      queuePracticeAttempt({ ...attempt, outcome });
+    }
+  }
+
+  function closePractice() {
+    activeRunIdRef.current = "";
+    currentRunRef.current?.stop();
+    setIsTesting(false);
+    setSelectedLesson(null);
+    setPracticeExercise(null);
+    setRecommendedExerciseId(null);
+  }
+
+  function openRecommendedPractice(recommendation: PracticeRecommendation) {
+    const lesson = getLessonForConcept(recommendation.concept);
+    const exercise = getExercise(recommendation.exerciseId);
+    if (!lesson || !exercise || exercise.concept !== recommendation.concept) {
+      return;
+    }
+    openLesson(lesson);
+    setRecommendedExerciseId(exercise.id);
+  }
 
   return (
     <main className="workspace">
-      <header className="topbar">
-<<<<<<< HEAD
-        <a className="brand" href="/" aria-label="Pyspace home">
-=======
-        <Link className="brand" href="/" aria-label="Pyspace home">
->>>>>>> 8b37a61 (10:48)
-          <span className="brand-mark" aria-hidden="true">
-            {"</>"}
-          </span>
-          <span>pyspace</span>
-<<<<<<< HEAD
-        </a>
-=======
-        </Link>
->>>>>>> 8b37a61 (10:48)
-        <div className="topbar-note">
-          <span className="status-dot" />
-          Python playground
-        </div>
-        <button className="button button-secondary example-button" onClick={loadExample}>
-          Load example
-        </button>
-      </header>
-
-      <section className="intro">
-        <p className="eyebrow">A little space to figure it out</p>
-        <h1>Write Python. Make it work.</h1>
-        <p className="intro-copy">
-          Try an idea, run it in your browser, or ask for a thoughtful fix when
-          you get stuck.
-        </p>
-      </section>
-
-      <section className="workspace-grid" aria-label="Python workspace">
-        <div className="editor-column">
-          <section className="panel editor-panel" aria-label="Python code editor">
-            <div className="panel-heading">
-              <div className="file-label">
-                <span className="python-badge">Py</span>
-                <span>main.py</span>
-              </div>
-<<<<<<< HEAD
-              <span className="panel-hint">Python 3</span>
-            </div>
-            <div className="editor-wrap">
-              <Editor
-=======
-              <span className="panel-hint">
-                Python 3 · {code.length.toLocaleString()}/20k chars
-              </span>
-            </div>
-            <div className="editor-wrap">
-              <Editor
-                onMount={(editor) => {
-                  editorRef.current = editor;
-                }}
->>>>>>> 8b37a61 (10:48)
-                height="390px"
-                language="python"
-                theme="vs-dark"
-                value={code}
-<<<<<<< HEAD
-                onChange={(value) => setCode(value ?? "")}
-=======
-                onChange={(value) => updateCode(value ?? "")}
->>>>>>> 8b37a61 (10:48)
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  lineNumbers: "on",
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  tabSize: 4,
-                  padding: { top: 18, bottom: 18 },
-                }}
-              />
-            </div>
-<<<<<<< HEAD
-=======
-            <details className="test-case-settings">
-              <summary>Function tests (optional)</summary>
-              <p>
-                Call functions with JSON basic types. Each case needs a
-                functionName and args; kwargs is optional.
-              </p>
-              <textarea
-                className="text-field test-case-input"
-                aria-label="Function test cases in JSON"
-                rows={4}
-                value={testCases}
-                onChange={(event) => updateTestCases(event.target.value)}
-                placeholder={'[{"functionName":"add","args":[2,3]}]'}
-                disabled={isRunning}
-              />
-            </details>
->>>>>>> 8b37a61 (10:48)
-            <div className="editor-actions">
-              <p className="editor-note">Your code runs locally in your browser.</p>
-              <div className="editor-button-group">
-                <button
-                  className="button button-secondary"
-                  onClick={downloadCode}
-                  disabled={!code}
-                >
-                  Download
-                </button>
-<<<<<<< HEAD
-                <button
-                  className="button button-run"
-                  onClick={() => void runCode()}
-                  disabled={isRunning || !code.trim()}
-                >
-                  {isRunning ? (
-                    <>
-                      <span className="spinner" />
-                      {isLoadingPython ? "Starting Python…" : "Running…"}
-                    </>
-                  ) : (
-                    <>
-                      <span aria-hidden="true">▶</span>
-                      Run code
-                    </>
-                  )}
-                </button>
-=======
-                {isRunning ? (
-                  <button className="button button-stop" onClick={stopCode}>
-                    Stop
-                  </button>
-                ) : (
-                  <button
-                    className="button button-run"
-                    onClick={() => void runCode()}
-                    disabled={!code.trim()}
-                  >
-                    <span aria-hidden="true">▶</span>
-                    Run code
-                  </button>
-                )}
->>>>>>> 8b37a61 (10:48)
-              </div>
-            </div>
-          </section>
-
-          <section className="panel output-panel" aria-labelledby="output-title">
-            <div className="panel-heading output-heading">
-              <h2 id="output-title">Output</h2>
-              <span className="panel-hint">Console</span>
-            </div>
-<<<<<<< HEAD
-            <pre className={`output-content${runError ? " output-error" : ""}`}>
-              {output}
-              {runError}
-              {!output && !runError &&
-                (isRunning ? "Starting the Python runtime…" : "Run your code to see the output.")}
-=======
-            <pre
-              className={`output-content${runError ? " output-error" : ""}`}
-              aria-live="polite"
-            >
-              {output}
-              {runError}
-              {!output && !runError &&
-                (isRunning
-                  ? isLoadingPython
-                    ? "Loading Python…"
-                    : "Running Python…"
-                  : "Run your code to see the output.")}
->>>>>>> 8b37a61 (10:48)
-            </pre>
-          </section>
-        </div>
-
-        <aside className="panel fix-panel" aria-labelledby="fix-title">
-          <div className="fix-heading">
-            <span className="fix-icon" aria-hidden="true">✳</span>
-            <div>
-              <p className="eyebrow">Pair programmer</p>
-              <h2 id="fix-title">Fix my code</h2>
-            </div>
-          </div>
-          <p className="fix-description">
-            Explain what you expected, and Gemini will help you understand and
-            correct the code.
-          </p>
-<<<<<<< HEAD
-
-          <label className="field-label" htmlFor="intended-behavior">
-            What should the code do?
-=======
-          <p className="supported-scope">
-            Best for short, self-contained Python functions. External packages,
-            databases, interactive input, and user files are outside the
-            supported execution scope.
-          </p>
-
-          <label className="field-label" htmlFor="intended-behavior">
-            What should the code do? <span aria-hidden="true">*</span>
->>>>>>> 8b37a61 (10:48)
-          </label>
-          <textarea
-            id="intended-behavior"
-            className="text-field"
-            rows={4}
-            value={intendedBehavior}
-<<<<<<< HEAD
-            onChange={(event) => setIntendedBehavior(event.target.value)}
-            placeholder="Describe the expected result or the problem you noticed…"
-            disabled={isFixing}
-          />
-=======
-            maxLength={3_000}
-            required
-            aria-required="true"
-            onChange={(event) => {
-              invalidateCorrection();
-              setIntendedBehavior(event.target.value);
-            }}
-            placeholder="Describe the expected result or the problem you noticed…"
-            disabled={isFixing}
-          />
-          <p className="field-limit">{intendedBehavior.length}/3,000 characters</p>
-
-          <label className="field-label" htmlFor="error-message">
-            Error message <span className="optional-label">(optional)</span>
-          </label>
-          <textarea
-            id="error-message"
-            className="text-field"
-            rows={2}
-            value={errorMessage}
-            maxLength={3_000}
-            onChange={(event) => {
-              invalidateCorrection();
-              setErrorMessage(event.target.value);
-            }}
-            placeholder="Paste the error or traceback, if any…"
-            disabled={isFixing}
-          />
-
-          <label className="field-label field-spaced" htmlFor="example-arguments">
-            Example arguments{" "}
-            <span className="optional-label">(optional JSON array)</span>
-          </label>
-          <textarea
-            id="example-arguments"
-            className="text-field"
-            rows={2}
-            value={exampleArguments}
-            maxLength={3_000}
-            onChange={(event) => {
-              invalidateCorrection();
-              setExampleArguments(event.target.value);
-            }}
-            placeholder="[[2, 3, 4]]"
-            disabled={isFixing}
-          />
-
-          <label className="field-label field-spaced" htmlFor="expected-result">
-            Expected result{" "}
-            <span className="optional-label">(optional JSON value)</span>
-          </label>
-          <textarea
-            id="expected-result"
-            className="text-field"
-            rows={2}
-            value={expectedResult}
-            maxLength={3_000}
-            onChange={(event) => {
-              invalidateCorrection();
-              setExpectedResult(event.target.value);
-            }}
-            placeholder="9, null, false, 0, …"
-            disabled={isFixing}
-          />
->>>>>>> 8b37a61 (10:48)
-
-          {fixResult?.needsClarification && (
-            <div className="clarification-box" role="status">
-              <p>{fixResult.question}</p>
-              <label className="field-label" htmlFor="clarification-answer">
-                Your answer
-              </label>
-              <textarea
-                id="clarification-answer"
-                className="text-field"
-                rows={3}
-                value={clarificationAnswer}
-<<<<<<< HEAD
-=======
-                maxLength={3_000}
-                required
-                aria-required="true"
->>>>>>> 8b37a61 (10:48)
-                onChange={(event) => setClarificationAnswer(event.target.value)}
-                placeholder="Add a little more detail…"
-                disabled={isFixing}
-              />
-            </div>
-          )}
-
-          <button
-            className="button button-fix"
-            onClick={handleFix}
-            disabled={
-              isFixing ||
-              !code.trim() ||
-<<<<<<< HEAD
-              (fixResult?.needsClarification && !clarificationAnswer.trim())
-=======
-              code.length > 20_000 ||
-              !intendedBehavior.trim() ||
-              intendedBehavior.length > 3_000 ||
-              (fixResult?.needsClarification &&
-                (!clarificationAnswer.trim() ||
-                  clarificationAnswer.length > 3_000))
->>>>>>> 8b37a61 (10:48)
-            }
-          >
-            {isFixing ? (
-              <>
-                <span className="spinner" />
-                Looking closely…
-              </>
-            ) : fixResult?.needsClarification ? (
-              "Send answer"
-            ) : (
-              "Help me fix it"
-            )}
+      <WorkspaceHeader />
+      {selectedLesson ? (
+        <section className="practice-view" aria-labelledby="practice-title">
+          <button className="text-button practice-back" onClick={closePractice}>
+            ← Back to workspace
           </button>
+          <p className="eyebrow">Pyspace lesson</p>
+          <h1 id="practice-title">{selectedLesson.title}</h1>
+          <p className="practice-explanation">{selectedLesson.explanation}</p>
 
-          {fixError && (
-            <div className="error-box" role="alert">
-              <p>{fixError}</p>
-              {lastFixRequest && (
-                <button
-                  className="text-button"
-                  onClick={() => void requestFix(lastFixRequest)}
-                  disabled={isFixing}
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
-
-          {fixResult && !fixResult.needsClarification && (
-            <div className="fix-result" aria-live="polite">
-              <div className="result-title-row">
-<<<<<<< HEAD
-                <h3>Suggested fix</h3>
-=======
-                <h3>Suggested correction — not executed</h3>
->>>>>>> 8b37a61 (10:48)
-                <button
-                  className="text-button"
-                  onClick={() => void copyCorrectedCode()}
-                >
-                  Copy corrected code
-                </button>
-              </div>
-              {fixResult.summary && <p className="result-summary">{fixResult.summary}</p>}
-              {fixResult.correctedCode && (
-                <pre className="corrected-code">
-                  <code>{fixResult.correctedCode}</code>
-                </pre>
-              )}
-              {originalFixCode !== null && fixResult.correctedCode && (
-                <details className="code-comparison">
-<<<<<<< HEAD
-                  <summary>Compare with original code</summary>
-                  <pre className="corrected-code original-code">
-                    <code>{originalFixCode}</code>
-=======
-                  <summary>Highlighted diff from submitted code</summary>
-                  <pre className="code-diff" aria-label="Highlighted code diff">
-                    {diffLines.map((line, index) => (
-                      <span
-                        className={`diff-line diff-${line.kind}`}
-                        key={`${index}-${line.kind}`}
-                      >
-                        <span className="diff-marker" aria-hidden="true">
-                          {line.kind === "added"
-                            ? "+"
-                            : line.kind === "removed"
-                              ? "−"
-                              : " "}
-                        </span>
-                        {line.text || " "}
-                        {"\n"}
-                      </span>
-                    ))}
->>>>>>> 8b37a61 (10:48)
-                  </pre>
-                </details>
-              )}
-              {fixResult.explanations.length > 0 && (
-                <div className="explanation">
-                  <h4>What changed</h4>
-                  <ul>
-                    {fixResult.explanations.map((explanation, index) => (
-                      <li key={`${index}-${explanation}`}>{explanation}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {fixResult.concept && (
-                <div className="concept-card">
-                  <span className="concept-label">Python concept</span>
-                  <p>{fixResult.concept}</p>
-                </div>
-              )}
-              <button
-                className="button button-secondary apply-button"
-                onClick={() => {
-                  if (fixResult.correctedCode) {
-<<<<<<< HEAD
-                    setCode(fixResult.correctedCode);
-                    setOutput("");
-                    setRunError("");
-=======
-                    updateCode(fixResult.correctedCode);
->>>>>>> 8b37a61 (10:48)
+          {!predictionSubmitted ? (
+            <section className="practice-card" aria-labelledby="prediction-title">
+              <p className="eyebrow">First, predict the output</p>
+              <h2 id="prediction-title">{selectedLesson.prediction.question}</h2>
+              <pre className="practice-example">
+                <code>{selectedLesson.prediction.code}</code>
+              </pre>
+              <label className="field-label" htmlFor="prediction-answer">
+                Your prediction
+              </label>
+              <input
+                id="prediction-answer"
+                className="text-field"
+                value={prediction}
+                onChange={(event) => setPrediction(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && prediction.trim()) {
+                    setPredictionSubmitted(true);
                   }
                 }}
-                disabled={!fixResult.correctedCode}
+              />
+              <button
+                className="button button-primary"
+                disabled={!prediction.trim()}
+                onClick={() => setPredictionSubmitted(true)}
               >
-                Use corrected code
+                Check my prediction
               </button>
-<<<<<<< HEAD
-=======
-              {originalFixCode !== null && (
+            </section>
+          ) : (
+            <section className="prediction-result" aria-live="polite">
+              <h2>
+                {prediction.trim() === selectedLesson.prediction.answer
+                  ? "That’s right!"
+                  : "Thanks for predicting"}
+              </h2>
+              <p>
+                The output is <code>{selectedLesson.prediction.answer}</code>.{" "}
+                {selectedLesson.prediction.explanation}
+              </p>
+              {!practiceExercise && (
                 <button
-                  className="text-button edit-submission-button"
+                  className="button button-primary"
                   onClick={() => {
-                    updateCode(originalFixCode);
-                    editorRef.current?.focus();
+                    const exercise = getExercise(
+                      recommendedExerciseId ?? selectedLesson.guidedExerciseId,
+                    );
+                    if (exercise) startExercise(exercise);
                   }}
                 >
-                  Edit submission
+                  {recommendedExerciseId
+                    ? "Start recommended practice"
+                    : "Start guided repair"}
                 </button>
               )}
->>>>>>> 8b37a61 (10:48)
-            </div>
+            </section>
           )}
-        </aside>
-      </section>
 
-      <footer className="footer">
-        <span>Made for the bugs that teach you something.</span>
-        <span>Code stays in your browser unless you ask for a fix.</span>
-      </footer>
+          {practiceExercise && (
+            <section className="practice-card exercise-card">
+              <div className="exercise-heading">
+                <div>
+                  <p className="eyebrow">
+                    {practiceExercise.concept.replace("_", " ")} ·{" "}
+                    {practiceExercise.id === selectedLesson.guidedExerciseId
+                      ? "Guided repair"
+                      : "Independent follow-up"}
+                  </p>
+                  <h2>{practiceExercise.title}</h2>
+                </div>
+                <button
+                  className="button button-secondary"
+                  onClick={() => {
+                    setPracticeCode(practiceExercise.starterCode);
+                    setTestFeedback("");
+                    setTestOutput("");
+                    setPracticeComplete(false);
+                  }}
+                >
+                  Reset code
+                </button>
+              </div>
+              <p>{practiceExercise.instructions}</p>
+              <div className="practice-editor">
+                <PythonEditor
+                  value={practiceCode}
+                  onChange={(value) => {
+                    setPracticeCode(value);
+                    setTestFeedback("");
+                    setPracticeComplete(false);
+                  }}
+                  height="300px"
+                />
+              </div>
+              <div className="practice-actions">
+                <button
+                  className="button button-primary"
+                  onClick={() => void runPracticeTests()}
+                  disabled={isTesting || isLoadingPython}
+                >
+                  {isLoadingPython ? "Loading Python…" : isTesting ? "Running tests…" : "Run tests"}
+                </button>
+                <button
+                  className="button button-secondary"
+                  onClick={() =>
+                    setHintsRevealed((count) =>
+                      Math.min(practiceExercise.hints.length, count + 1),
+                    )
+                  }
+                  disabled={hintsRevealed >= practiceExercise.hints.length}
+                >
+                  {hintsRevealed >= practiceExercise.hints.length
+                    ? "All hints revealed"
+                    : `Hint (${hintsRevealed}/${practiceExercise.hints.length})`}
+                </button>
+                <span className="attempt-count">
+                  Test runs: {practiceAttempts}
+                </span>
+              </div>
+              {hintsRevealed > 0 && (
+                <ol className="hint-list" aria-label="Revealed hints">
+                  {practiceExercise.hints.slice(0, hintsRevealed).map((hint, index) => (
+                    <li key={hint}>
+                      <strong>Hint {index + 1}.</strong> {hint}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {testFeedback && (
+                <div
+                  className={`test-feedback ${practiceComplete ? "test-success" : "test-failure"}`}
+                  aria-live="polite"
+                >
+                  {testFeedback}
+                </div>
+              )}
+              {testOutput && (
+                <pre className="test-output" aria-label="Python output">
+                  {testOutput}
+                </pre>
+              )}
+              {practiceComplete && (
+                <section className="completion-summary" aria-live="polite">
+                  <h3>Exercise complete</h3>
+                  <p>
+                    You passed all {practiceExercise.tests.length} tests in{" "}
+                    {practiceAttempts} test run{practiceAttempts === 1 ? "" : "s"}
+                    {hintsRevealed
+                      ? ` and revealed ${hintsRevealed} hint${hintsRevealed === 1 ? "" : "s"}.`
+                      : " without revealing a hint."}
+                  </p>
+                  {practiceExercise.followUpExerciseId ? (
+                    <button
+                      className="button button-primary"
+                      onClick={() => {
+                        const followUpId = practiceExercise.followUpExerciseId;
+                        if (!followUpId) return;
+                        const followUp = getExercise(followUpId);
+                        if (followUp) startExercise(followUp);
+                      }}
+                    >
+                      Try the independent follow-up
+                    </button>
+                  ) : (
+                    <button className="button button-secondary" onClick={closePractice}>
+                      Return to workspace
+                    </button>
+                  )}
+                </section>
+              )}
+              {pendingPracticeSaves.some(
+                (pending) =>
+                  pending.payload.exerciseId === practiceExercise.id,
+              ) && (
+                <section
+                  className="pending-save-list"
+                  aria-live="polite"
+                  aria-label="Practice history saves"
+                >
+                  {pendingPracticeSaves
+                    .filter(
+                      (pending) =>
+                        pending.payload.exerciseId === practiceExercise.id,
+                    )
+                    .map((pending) => (
+                      <div key={pending.payload.attemptId}>
+                        <p>
+                          {pending.saving
+                            ? "Saving this run to My Practice…"
+                            : pending.error ||
+                              "This run is not yet saved to My Practice."}
+                        </p>
+                        {!pending.saving && (
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              retryPendingPracticeSave(
+                                pending.payload.attemptId,
+                              )
+                            }
+                          >
+                            Retry save
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </section>
+              )}
+            </section>
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="intro">
+            <p className="eyebrow">Learn by doing</p>
+            <h1>Try an idea, run it in your browser</h1>
+            <p className="intro-copy">
+              Experiment with Python, then ask for a thoughtful fix when you get stuck.
+            </p>
+          </section>
+
+          <div className="workspace-grid">
+            <section className="editor-column panel">
+              <div className="panel-heading">
+                <span className="file-label">Pymain.py</span>
+                <span className="python-badge">Python 3</span>
+                <div className="editor-heading-actions">
+                  <button
+                    className="button button-secondary example-button"
+                    onClick={loadAverageExample}
+                  >
+                    Load average example
+                  </button>
+                  <button
+                    className="button button-secondary example-button"
+                    onClick={resetWorkspace}
+                    title="Reset this page's unsaved editor content and results. Persistent My Practice history is unchanged."
+                  >
+                    Reset workspace
+                  </button>
+                </div>
+              </div>
+              <div className="editor-wrap">
+                <PythonEditor value={code} onChange={updateCode} />
+              </div>
+              <details className="test-case-settings">
+                <summary>Optional function tests</summary>
+                <p>
+                  Provide a JSON array of function calls, each with a functionName and args.
+                </p>
+                <textarea
+                  className="test-case-input"
+                  aria-label="Optional function tests"
+                  value={testCases}
+                  onChange={(event) => setTestCases(event.target.value)}
+                  spellCheck={false}
+                />
+              </details>
+              <div className="editor-actions">
+                <p className="editor-note">
+                  Your code runs locally in your browser.
+                  {isLoadingPython && " Loading the Python runtime…"}
+                </p>
+                <div className="editor-button-group">
+                  <button
+                    className="button button-secondary"
+                    onClick={downloadCode}
+                  >
+                    Download
+                  </button>
+                  {isRunning && (
+                    <button className="button button-stop" onClick={stopRun}>
+                      Stop
+                    </button>
+                  )}
+                  <button
+                    id="run-code-button"
+                    className="button button-run"
+                    onClick={() => void runCode()}
+                    disabled={isRunning}
+                  >
+                    {isRunning ? "Running…" : "▶ Run code"}
+                  </button>
+                </div>
+              </div>
+              <section className="output-panel" aria-labelledby="output-title">
+                <div className="panel-heading output-heading">
+                  <h2 id="output-title">Output</h2>
+                  <span>Console</span>
+                </div>
+                <pre className={`output-content ${runError ? "output-error" : ""}`}>
+                  {[output, runError].filter(Boolean).join("\n\n") ||
+                    "Run your code to see its output."}
+                </pre>
+              </section>
+            </section>
+
+            <aside className="fix-panel panel">
+              <div className="fix-heading">
+                <span className="fix-icon">✳</span>
+                <div>
+                  <p className="eyebrow">Pair programmer</p>
+                  <h2>Fix my code</h2>
+                </div>
+              </div>
+              <p className="fix-description">
+                Your editor contents are included automatically. Describe what you expected,
+                and Gemini will help explain a focused fix.
+              </p>
+              <label className="field-label" htmlFor="intended-behavior">
+                What should this code do? <span className="optional-label">Optional</span>
+              </label>
+              <textarea
+                id="intended-behavior"
+                className="text-field behavior-field"
+                value={intendedBehavior}
+                onChange={(event) => {
+                  setIntendedBehavior(event.target.value);
+                  clearFixState();
+                }}
+                placeholder="For example: calculate and display the average score."
+                maxLength={3000}
+              />
+              <details className="fix-context">
+                <summary>Add an error or example (optional)</summary>
+                <label className="field-label" htmlFor="error-message">
+                  Error message
+                </label>
+                <textarea
+                  id="error-message"
+                  className="text-field"
+                  value={errorMessage || observedError || runError}
+                  onChange={(event) => {
+                    setErrorMessage(event.target.value);
+                    setObservedError("");
+                    clearFixState();
+                  }}
+                  placeholder="A recent Run code error is included automatically."
+                  maxLength={3000}
+                />
+                <label className="field-label field-spaced" htmlFor="example-arguments">
+                  Example function arguments (JSON array)
+                </label>
+                <input
+                  id="example-arguments"
+                  className="text-field"
+                  value={exampleArguments}
+                  onChange={(event) => {
+                    setExampleArguments(event.target.value);
+                    clearFixState();
+                  }}
+                  placeholder='[ [82, 91, 76] ]'
+                />
+                <label className="field-label field-spaced" htmlFor="expected-result">
+                  Expected result (JSON)
+                </label>
+                <input
+                  id="expected-result"
+                  className="text-field"
+                  value={expectedResult}
+                  onChange={(event) => {
+                    setExpectedResult(event.target.value);
+                    clearFixState();
+                  }}
+                  placeholder='"83.0"'
+                />
+              </details>
+              <button
+                className="button button-fix"
+                onClick={requestFix}
+                disabled={isFixing || !code.trim()}
+              >
+                {isFixing ? "Thinking…" : "✳ Help me fix it"}
+              </button>
+              {fixError && (
+                <div className="error-box" role="alert">
+                  <p>{fixError}</p>
+                  <button className="text-button" onClick={requestFix}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {fixResult?.needsClarification && (
+                <div className="clarification-box">
+                  <p>{fixResult.question}</p>
+                  <label className="field-label" htmlFor="clarification-answer">
+                    Your answer
+                  </label>
+                  <textarea
+                    id="clarification-answer"
+                    className="text-field"
+                    value={clarificationAnswer}
+                    onChange={(event) => setClarificationAnswer(event.target.value)}
+                    maxLength={3000}
+                  />
+                  <button
+                    className="button button-fix"
+                    onClick={answerClarification}
+                    disabled={isFixing || !clarificationAnswer.trim()}
+                  >
+                    {isFixing ? "Thinking…" : "Send answer"}
+                  </button>
+                </div>
+              )}
+              {fixResult && !fixResult.needsClarification && (
+                <section className="fix-result" aria-live="polite">
+                  <div className="result-title-row">
+                    <h3>Suggested fix</h3>
+                    <button
+                      className="text-button"
+                      onClick={() =>
+                        navigator.clipboard.writeText(fixResult.correctedCode)
+                      }
+                    >
+                      Copy corrected code
+                    </button>
+                  </div>
+                  <p className="result-summary">{fixResult.summary}</p>
+                  <pre className="corrected-code">
+                    <code>{fixResult.correctedCode}</code>
+                  </pre>
+                  <details className="code-comparison">
+                    <summary>Compare with original code</summary>
+                    <div className="comparison-columns">
+                      <div>
+                        <h4>Original</h4>
+                        <pre className="original-code">{originalFixCode}</pre>
+                      </div>
+                      <div>
+                        <h4>Corrected</h4>
+                        <pre className="original-code">{fixResult.correctedCode}</pre>
+                      </div>
+                    </div>
+                  </details>
+                  <div className="explanation">
+                    <div className="explanation-heading">
+                      <h4>What changed</h4>
+                      <NarrationControls
+                        key={`${fixResult.summary}\n${fixResult.explanations.join("\n")}`}
+                        text={[fixResult.summary, ...fixResult.explanations].join("\n")}
+                      />
+                    </div>
+                    <ul>
+                      {fixResult.explanations.map((explanation) => (
+                        <li key={explanation}>{explanation}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <details className="example-tests">
+                    <summary>Check examples on both versions (optional)</summary>
+                    <p className="example-arguments-hint">
+                      These examples run the original and corrected code locally
+                      in your browser. Function tests skip top-level expression
+                      statements such as demo print calls. They are useful
+                      checks, not proof of correctness.
+                    </p>
+                    <label className="field-label" htmlFor="example-test-cases">
+                      Example tests{" "}
+                      <span className="optional-label">
+                        (JSON array: functionName, args, expected)
+                      </span>
+                    </label>
+                    <textarea
+                      id="example-test-cases"
+                      className="text-field example-test-input"
+                      rows={5}
+                      value={exampleCasesText}
+                      maxLength={20_000}
+                      onChange={(event) => {
+                        setExampleCasesText(event.target.value);
+                        setExpectationSource("user-provided");
+                        setReviewedAiExpectations(false);
+                        setExampleCaseError("");
+                        clearExampleVerification();
+                      }}
+                      placeholder='[{"functionName":"average","args":[[82,91,76]],"expected":83.0}]'
+                      disabled={isVerifyingExamples}
+                    />
+                    <p className="expectation-source">
+                      Expected values: <strong>{expectationSource}</strong>
+                    </p>
+                    {fixResult.exampleTests.length > 0 && (
+                      <button
+                        className="text-button ai-examples-button"
+                        onClick={useAiSuggestedExamples}
+                        disabled={isVerifyingExamples}
+                      >
+                        Use {fixResult.exampleTests.length} AI-suggested
+                        example{fixResult.exampleTests.length === 1 ? "" : "s"}
+                        {" "}(review required)
+                      </button>
+                    )}
+                    {expectationSource === "AI-suggested" && (
+                      <label className="review-expectations">
+                        <input
+                          type="checkbox"
+                          checked={reviewedAiExpectations}
+                          onChange={(event) => {
+                            setReviewedAiExpectations(event.target.checked);
+                            clearExampleVerification();
+                          }}
+                          disabled={isVerifyingExamples}
+                        />
+                        I reviewed the AI-suggested expected values and want to
+                        use them as test targets.
+                      </label>
+                    )}
+                    <button
+                      className="button button-secondary verify-examples-button"
+                      onClick={() => void verifyExamples()}
+                      disabled={
+                        isVerifyingExamples ||
+                        !originalFixCode ||
+                        (expectationSource === "AI-suggested" &&
+                          !reviewedAiExpectations)
+                      }
+                    >
+                      {isVerifyingExamples
+                        ? "Running original and corrected code…"
+                        : "Run examples on both versions"}
+                    </button>
+                    {exampleCaseError && (
+                      <p className="example-case-error" role="alert">
+                        {exampleCaseError}
+                      </p>
+                    )}
+                    {exampleVerification && (
+                      <div className="example-verification" aria-live="polite">
+                        <div className="verification-side">
+                          <h4>Original: {exampleVerification.original.status}</h4>
+                          <ExampleCaseResults
+                            cases={exampleVerification.cases}
+                            outcomes={exampleVerification.original.outcomes}
+                          />
+                        </div>
+                        <div className="verification-side">
+                          <h4>Corrected: {exampleVerification.corrected.status}</h4>
+                          <ExampleCaseResults
+                            cases={exampleVerification.cases}
+                            outcomes={exampleVerification.corrected.outcomes}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </details>
+                  {fixResult.concept && (
+                    <div className="concept-card">
+                      <span className="concept-label">Python concept</span>
+                      <p>{fixResult.concept}</p>
+                    </div>
+                  )}
+                  <p className="practice-pattern">
+                    Practice pattern: <strong>{fixResult.practiceType.replace("_", " ")}</strong>
+                  </p>
+                  {getLessonForConcept(fixResult.practiceType) ? (
+                    <button
+                      className="text-button practice-link"
+                      onClick={() => {
+                        const lesson = getLessonForConcept(fixResult.practiceType);
+                        if (lesson) openLesson(lesson);
+                      }}
+                    >
+                      Practice this mistake
+                    </button>
+                  ) : (
+                    <p className="practice-unavailable">
+                      Targeted practice is not available for this pattern yet. You can still
+                      use the correction below.
+                    </p>
+                  )}
+                  <button
+                    className="button button-primary apply-button"
+                    onClick={() => updateCode(fixResult.correctedCode)}
+                  >
+                    Use corrected code
+                  </button>
+                </section>
+              )}
+            </aside>
+          </div>
+
+          <MyPractice
+            sessionStatus={practiceSessionStatus}
+            refreshVersion={historyRefreshVersion}
+            onRetrySession={retryPracticeSession}
+            onOpenRecommendation={openRecommendedPractice}
+          />
+
+          <section className="lesson-library" aria-labelledby="lessons-title">
+            <p className="eyebrow">Practice the patterns</p>
+            <h2 id="lessons-title">Lessons that make bugs teach you something</h2>
+            <div className="lesson-grid">
+              {lessons.map((lesson) => (
+                <article className="lesson-tile" key={lesson.id}>
+                  <h3>{lesson.title}</h3>
+                  <p>{lesson.explanation}</p>
+                  <button className="text-button" onClick={() => openLesson(lesson)}>
+                    Start lesson
+                  </button>
+                </article>
+              ))}
+            </div>
+            <p className="exercise-count">
+              {exercises.length} reviewed exercises with boundary-focused tests
+            </p>
+          </section>
+          <footer className="footer">Made for the bugs that teach you something.</footer>
+        </>
+      )}
     </main>
   );
 }
