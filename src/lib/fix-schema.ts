@@ -28,10 +28,30 @@ export const fixRequestSchema = z
   })
   .strict();
 
+export const errorLessonSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  diagnosis: z.string().trim().min(1).max(2000),
+  explanation: z.string().trim().min(1).max(4000),
+  exampleCode: z.string().trim().min(1).max(3000),
+  exampleExplanation: z.string().trim().min(1).max(2000),
+  checks: z.array(z.object({
+    question: z.string().trim().min(1).max(1000),
+    options: z.array(z.string().trim().min(1).max(1000)).min(2).max(4),
+    correctIndex: z.number().int().min(0).max(3),
+    explanation: z.string().trim().min(1).max(2000),
+    hint: z.string().trim().min(1).max(1000),
+  }).strict().refine((check) => check.correctIndex < check.options.length, {
+    message: "The correct answer must refer to an available option.",
+  })).min(2).max(3),
+}).strict();
+
+export type ErrorLesson = z.infer<typeof errorLessonSchema>;
+
 export const fixResultSchema = z.discriminatedUnion("needsClarification", [
   z
     .object({
       needsClarification: z.literal(true),
+      lesson: z.null(),
       question: z.string().trim().min(1),
       correctedCode: z.null(),
       summary: z.null(),
@@ -44,6 +64,7 @@ export const fixResultSchema = z.discriminatedUnion("needsClarification", [
   z
     .object({
       needsClarification: z.literal(false),
+      lesson: errorLessonSchema,
       question: z.null(),
       correctedCode: z.string().trim().min(1),
       summary: z.string().trim().min(1),

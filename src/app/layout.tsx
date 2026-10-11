@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Nunito, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
+const geistSans = Nunito({
   variable: "--font-geist-sans",
   subsets: ["latin"],
 });
@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pyspace | Python Playground",
+  title: "2ndTry | Learn from your code",
   description:
-    "A friendly browser-based Python playground with instant execution and AI-powered code explanations.",
+    "An AI Python tutor that turns your coding errors into personalized lessons and unlocks corrected code after you learn.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

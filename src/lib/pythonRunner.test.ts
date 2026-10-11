@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixResultSchema } from "./fix-schema.ts";
+import { errorLessonSchema, fixResultSchema } from "./fix-schema.ts";
 import {
   isPythonExampleCases,
   isPythonTestCases,
 } from "./pythonRunner.ts";
+
+const lesson = {
+  title: "Understand return values",
+  diagnosis: "The function returns a value different from its intended result.",
+  explanation: "A return expression determines the value sent back to the caller.",
+  exampleCode: "def triple(item): return item * 3",
+  exampleExplanation: "Calling triple(2) returns 6.",
+  checks: [
+    { question: "What does triple(3) return?", options: ["3", "9"], correctIndex: 1, explanation: "Three times three is nine.", hint: "Follow the multiplication." },
+    { question: "Which expression doubles an input?", options: ["item * 2", "item + 1"], correctIndex: 0, explanation: "Multiplication scales the input.", hint: "Doubling means two copies of the same value." },
+  ],
+};
 
 test("accepts bounded JSON-compatible example cases", () => {
   assert.equal(
@@ -46,6 +58,7 @@ test("rejects malformed or unexpected example and function-test fields", () => {
 test("normalizes absent suggestions and rejects malformed AI-suggested tests", () => {
   const parsed = fixResultSchema.parse({
     needsClarification: false,
+    lesson,
     question: null,
     correctedCode: "def double(value): return value * 2",
     summary: "Multiply the input by two.",
@@ -57,6 +70,7 @@ test("normalizes absent suggestions and rejects malformed AI-suggested tests", (
 
   const malformed = fixResultSchema.safeParse({
     needsClarification: false,
+    lesson,
     question: null,
     correctedCode: "print('ok')",
     summary: "Print a message.",
@@ -68,4 +82,11 @@ test("normalizes absent suggestions and rejects malformed AI-suggested tests", (
     ],
   });
   assert.equal(malformed.success, false);
+});
+
+test("requires a complete lesson and valid answer indexes before accepting a fix", () => {
+  assert.equal(errorLessonSchema.safeParse({ ...lesson, checks: [] }).success, false);
+  assert.equal(errorLessonSchema.safeParse({ ...lesson, checks: lesson.checks.map(check => ({ ...check, correctIndex: 3 })) }).success, false);
+  assert.equal(fixResultSchema.safeParse({ needsClarification: false, question: null,
+    correctedCode: "print(1)", summary: "Fixed", explanations: ["A fix"], concept: null, practiceType: "other" }).success, false);
 });

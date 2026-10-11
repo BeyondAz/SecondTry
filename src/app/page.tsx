@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import MyPractice from "@/app/MyPractice";
+import ErrorLessonCard from "@/app/ErrorLessonCard";
+import { ForestBackdrop, PipMascot } from "@/app/ForestArtwork";
 import {
   createPythonRun,
   isPythonExampleCases,
@@ -39,7 +41,7 @@ import type {
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-const starterCode = `# Welcome to Pyspace
+const starterCode = `# Welcome to 2ndTry
 name = "world"
 print(f"Hello, {name}!")
 `;
@@ -47,6 +49,7 @@ print(f"Hello, {name}!")
 const workspaceExamples = [
   {
     label: "Average",
+    description: "A name that Python cannot find",
     code: `def average(numbers):
     return sum(numbers) / len(number)
 
@@ -59,29 +62,35 @@ print(f"The average score is {average(scores):.1f}")`,
   },
   {
     label: "Running total",
+    description: "A loop that loses its running total",
     code: `def sum_prices(prices):
     total = 0
     for price in prices:
         total = price
     return total
 
-print(sum_prices([4, 2, 3]))`,
+result = sum_prices([4, 2, 3])
+print(f"Expected: 9 | Actual: {result}")
+assert result == 9, "The total should include every price."`,
     intendedBehavior: "Add every price and print the total, 9.",
-    errorMessage: "This example prints 3 because each loop replaces the total.",
+    errorMessage: "This example prints 3 instead of 9 and fails its assertion.",
     exampleArguments: "[[4, 2, 3]]",
     expectedResult: "9",
   },
   {
     label: "Range endpoint",
+    description: "A range that stops one number too soon",
     code: `def sum_to(limit):
     total = 0
     for number in range(1, limit):
         total += number
     return total
 
-print(sum_to(4))`,
+result = sum_to(4)
+print(f"Expected: 10 | Actual: {result}")
+assert result == 10, "The total should include the endpoint."`,
     intendedBehavior: "Add every number from 1 through 4 and print 10.",
-    errorMessage: "This example prints 6 because the range stops before 4.",
+    errorMessage: "This example prints 6 instead of 10 and fails its assertion.",
     exampleArguments: "[4]",
     expectedResult: "10",
   },
@@ -129,7 +138,7 @@ function WorkspaceHeader({
   onViewChange: (view: WorkspaceView) => void;
 }) {
   const views: { id: WorkspaceView; label: string }[] = [
-    { id: "playground", label: "Fix code" },
+    { id: "playground", label: "AI tutor" },
     { id: "practice", label: "Practice" },
     { id: "progress", label: "Progress" },
   ];
@@ -143,7 +152,7 @@ function WorkspaceHeader({
             <path d="M7 19c3-4 6-6 10-8" />
           </svg>
         </span>
-        Pyspace
+        2ndTry
       </Link>
       <nav className="primary-nav" aria-label="Main navigation">
         {views.map((view) => (
@@ -191,113 +200,10 @@ function PipArtwork({
   decorative?: boolean;
 }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 120 108"
-      role={decorative ? undefined : "img"}
-      aria-label={decorative ? undefined : label}
-      aria-hidden={decorative || undefined}
-      shapeRendering="geometricPrecision"
-    >
-      <g className="pip-body">
-        <path
-          d="M68 66c-5 10-12 16-22 19-7 2-14-1-15-7-1-6 5-10 11-8 4 1 6 5 4 8"
-          fill="none"
-          stroke="#153b2e"
-          strokeLinecap="round"
-          strokeWidth="16"
-        />
-        <path
-          d="M68 66c-5 10-12 16-22 19-7 2-14-1-15-7-1-6 5-10 11-8 4 1 6 5 4 8"
-          fill="none"
-          stroke="#d5e98c"
-          strokeLinecap="round"
-          strokeWidth="10"
-        />
-        <path
-          d="M42 78c-2 3-1 6 2 7"
-          fill="none"
-          stroke="#eff6bd"
-          strokeLinecap="round"
-          strokeWidth="3"
-        />
-        <path
-          d="M65 61c2 5 5 8 9 11"
-          fill="none"
-          stroke="#153b2e"
-          strokeLinecap="round"
-          strokeWidth="15"
-        />
-        <path
-          d="M65 61c2 5 5 8 9 11"
-          fill="none"
-          stroke="#d5e98c"
-          strokeLinecap="round"
-          strokeWidth="9"
-        />
-        <path d="M57 68c3 4 7 7 12 9l-5 7c-5-2-10-6-13-10Z" fill="#f0a63d" />
-        <path d="M58 71c3 3 6 5 9 6" fill="none" stroke="#ffe7b6" strokeWidth="2" strokeLinecap="round" />
-      </g>
-      <g className="pip-head">
-        <path
-          d="M49 61c-5-6-7-14-5-22 2-11 12-18 24-18 11 0 19 6 21 15 1 5 5 7 11 7h8c4 0 6 2 6 5s-2 5-6 5H96c-4 8-13 12-24 12-9 0-16-2-23-4Z"
-          fill="#153b2e"
-          transform="translate(0 2)"
-        />
-        <path
-          d="M49 60c-5-6-7-14-5-22 2-11 12-18 24-18 11 0 19 6 21 15 1 5 5 7 11 7h8c4 0 6 2 6 5s-2 5-6 5H96c-4 8-13 12-24 12-9 0-16-2-23-4Z"
-          fill="#d5e98c"
-          stroke="#153b2e"
-          strokeWidth="1.5"
-        />
-        <path
-          d="M53 54c5 4 11 6 18 6"
-          fill="none"
-          stroke="#f2f6bd"
-          strokeLinecap="round"
-          strokeWidth="4"
-        />
-        <path
-          d="M47 37c2-8 8-13 17-14"
-          fill="none"
-          stroke="#edf4b1"
-          strokeLinecap="round"
-          strokeWidth="3"
-        />
-      </g>
-      <g className="pip-face">
-        <ellipse cx="70" cy="36" rx="4" ry="5" fill="#fffdf2" />
-        <ellipse cx="87" cy="38" rx="4" ry="5" fill="#fffdf2" />
-        <circle cx="71" cy="37" r="1.8" fill="#183c32" />
-        <circle cx="88" cy="39" r="1.8" fill="#183c32" />
-        <circle cx="78" cy="47" r="2" fill="#e99b79" opacity=".9" />
-        <path
-          d="M77 49c3 2 6 2 9 0"
-          fill="none"
-          stroke="#153b2e"
-          strokeLinecap="round"
-          strokeWidth="1.8"
-        />
-        <circle cx="107" cy="47" r="1.2" fill="#153b2e" />
-      </g>
-      <g className="pip-accessory" aria-hidden="true">
-        <path
-          d="M53 21c2-7 8-11 15-11-1 7-5 12-12 14"
-          fill="#91c94e"
-          stroke="#153b2e"
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <path d="M55 22c3-4 6-6 10-8" fill="none" stroke="#e9f5ae" strokeWidth="1.5" />
-        <path
-          d="M55 53c3 3 7 5 11 6"
-          fill="none"
-          stroke="#f0a63d"
-          strokeLinecap="round"
-          strokeWidth="2"
-        />
-      </g>
-    </svg>
+    <span className={className} role={decorative ? undefined : "img"}
+      aria-label={decorative ? undefined : label} aria-hidden={decorative || undefined}>
+      <PipMascot />
+    </span>
   );
 }
 
@@ -467,11 +373,16 @@ function PracticeHome({
         </div>
       </section>
 
+      <div className="trail-facts" aria-label="Your learning toolkit">
+        <div><span className="trail-fact-icon" aria-hidden="true">⌘</span><div><span>Python foundations</span><strong>{lessons.length} learning paths</strong></div></div>
+        <div><span className="trail-fact-icon" aria-hidden="true">⌁</span><div><span>Learn by doing</span><strong>Guided + independent</strong></div></div>
+        <div><span className="trail-fact-icon" aria-hidden="true">✦</span><div><span>A little help along the way</span><strong>Pip is here for you</strong></div></div>
+      </div>
       <section className="concept-section" aria-labelledby="concept-section-title">
         <div className="concept-section-heading">
           <div>
-            <p className="eyebrow">Choose a pattern</p>
-            <h2 id="concept-section-title">Three useful things to practice</h2>
+            <p className="eyebrow">Keep growing</p>
+            <h2 id="concept-section-title">Choose your next quest</h2>
           </div>
           <span>Short lessons, real Python</span>
         </div>
@@ -487,7 +398,7 @@ function PracticeHome({
                 className="text-button concept-tile-action"
                 onClick={() => onStartLesson(lesson)}
               >
-                Explore this pattern <span aria-hidden="true">→</span>
+                Start learning <span aria-hidden="true">→</span>
               </button>
             </article>
           ))}
@@ -781,6 +692,8 @@ function PythonEditor({
 export default function Home() {
   const [activeView, setActiveView] = useState<WorkspaceView>("playground");
   const [code, setCode] = useState(starterCode);
+  const [loadedExample, setLoadedExample] = useState<(typeof workspaceExamples)[number] | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [testCases, setTestCases] = useState("[]");
   const [exampleCasesText, setExampleCasesText] = useState("[]");
   const [expectationSource, setExpectationSource] =
@@ -795,6 +708,9 @@ export default function Home() {
   const [exampleArguments, setExampleArguments] = useState("");
   const [expectedResult, setExpectedResult] = useState("");
   const [clarificationAnswer, setClarificationAnswer] = useState("");
+  const [lessonUnlocked, setLessonUnlocked] = useState(false);
+  const tutorScreenRef = useRef<HTMLDivElement>(null);
+  const fixRequestVersion = useRef(0);
   const [fixResult, setFixResult] = useState<FixResult | null>(null);
   const [originalFixCode, setOriginalFixCode] = useState("");
   const [fixError, setFixError] = useState("");
@@ -1049,6 +965,13 @@ export default function Home() {
     void savePendingPracticeAttempt(payload.attemptId);
   }
 
+  const tutorStep = fixResult && !fixResult.needsClarification ? (lessonUnlocked ? 3 : 2) : 1;
+  useEffect(() => {
+    if (activeView !== "playground" || tutorStep === 1) return;
+    tutorScreenRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    tutorScreenRef.current?.focus({ preventScroll: true });
+  }, [tutorStep, activeView]);
+
   function clearExampleVerification() {
     verificationRequestIdRef.current += 1;
     const activeRun = verificationRunRef.current;
@@ -1059,6 +982,10 @@ export default function Home() {
   }
 
   function clearFixState() {
+    fixRequestVersion.current += 1;
+    setLessonUnlocked(false);
+    setCopyStatus("idle");
+    setIsFixing(false);
     clearExampleVerification();
     setExampleCasesText("[]");
     setExpectationSource("user-provided");
@@ -1072,6 +999,15 @@ export default function Home() {
   }
 
   function updateCode(nextCode: string) {
+    currentRunRef.current?.stop();
+    currentRunRef.current = null;
+    activeRunIdRef.current = "";
+    setIsRunning(false);
+    setIsLoadingPython(false);
+    setOutput("");
+    setRunError("");
+    setObservedError("");
+    setLoadedExample(null);
     setCode(nextCode);
     clearFixState();
   }
@@ -1147,6 +1083,7 @@ export default function Home() {
     setIsRunning(false);
     setIsLoadingPython(false);
     updateCode(example.code);
+    setLoadedExample(example);
     setTestCases("[]");
     setIntendedBehavior(example.intendedBehavior);
     setExampleArguments(example.exampleArguments);
@@ -1164,6 +1101,7 @@ export default function Home() {
     setIsRunning(false);
     setIsLoadingPython(false);
     setCode(starterCode);
+    setLoadedExample(null);
     setTestCases("[]");
     setIntendedBehavior("");
     setErrorMessage("");
@@ -1201,6 +1139,8 @@ export default function Home() {
   }
 
   async function sendFixRequest(values: FixRequest) {
+    const requestVersion = ++fixRequestVersion.current;
+    setLessonUnlocked(false);
     clearExampleVerification();
     setExampleCasesText("[]");
     setExpectationSource("user-provided");
@@ -1217,18 +1157,19 @@ export default function Home() {
         body: JSON.stringify(values),
       });
       const body: unknown = await response.json();
+      if (requestVersion !== fixRequestVersion.current) return;
       if (!response.ok) {
         const message =
           body && typeof body === "object" && "error" in body &&
           typeof body.error === "string"
             ? body.error
-            : "Gemini could not complete the fix. Please retry.";
+            : "The AI could not build your lesson. Please retry.";
         setFixError(message);
         return;
       }
       const result = fixResultSchema.safeParse(body);
       if (!result.success) {
-        setFixError("Gemini returned an incomplete correction. Please retry.");
+        setFixError("The AI returned an incomplete lesson. Please retry.");
         return;
       }
       if (
@@ -1240,9 +1181,9 @@ export default function Home() {
       if (!result.data.needsClarification) setOriginalFixCode(values.code);
       setFixResult(result.data);
     } catch {
-      setFixError("Could not reach Gemini. Check your connection and retry.");
+      if (requestVersion === fixRequestVersion.current) setFixError("Could not reach Gemini. Check your connection and retry.");
     } finally {
-      setIsFixing(false);
+      if (requestVersion === fixRequestVersion.current) setIsFixing(false);
     }
   }
 
@@ -1542,6 +1483,7 @@ export default function Home() {
 
   return (
     <main className="workspace">
+      <ForestBackdrop />
       <WorkspaceHeader
         activeView={activeView}
         onViewChange={setActiveView}
@@ -1556,7 +1498,7 @@ export default function Home() {
           <button className="text-button practice-back" onClick={closePractice}>
             ← Back to practice
           </button>
-          <p className="eyebrow">Pyspace lesson</p>
+          <p className="eyebrow">2ndTry lesson</p>
           <h1 id="practice-title">{selectedLesson.title}</h1>
           <p className="practice-explanation">{selectedLesson.explanation}</p>
 
@@ -1815,226 +1757,57 @@ export default function Home() {
       {activeView === "playground" && (
         <section className="app-view" aria-label="Playground">
         <>
-          <section className="intro playground-intro">
-            <p className="eyebrow">Fix code</p>
-            <h1>Find the bug. Fix it. Practice the pattern.</h1>
+          <section className={`intro playground-intro ${tutorStep > 1 ? "intro-compact" : ""}`}>
+            <p className="eyebrow">Your personal Python tutor</p>
+            <h1>Turn a coding mistake into a breakthrough.</h1>
             <p className="intro-copy">
-              Run your Python, get a focused correction, then practice a similar problem.
+              Bring your code. Understand the error through a lesson built for you. Complete the learning checks, then unlock your fix.
             </p>
           </section>
 
-          <div className="workspace-grid">
-            <section className="editor-column panel">
-              <div className="panel-heading">
-                <span className="file-label">main.py</span>
-                <span className="python-badge">Python 3</span>
-                <div className="editor-heading-actions">
-                  <details className="example-picker">
-                    <summary className="button button-secondary example-button">
-                      Load a bug example
-                    </summary>
-                    <div
-                      className="example-picker-options"
-                      role="group"
-                      aria-label="Bug examples"
-                    >
-                      {workspaceExamples.map((example) => (
-                        <button
-                          key={example.label}
-                          type="button"
-                          className="text-button"
-                          onClick={() => loadWorkspaceExample(example)}
-                        >
-                          {example.label}
-                        </button>
-                      ))}
-                    </div>
-                  </details>
-                  <button
-                    className="button button-secondary example-button"
-                    onClick={resetWorkspace}
-                    title="Reset this page's unsaved editor content and results. Persistent My Practice history is unchanged."
-                  >
-                    Reset workspace
-                  </button>
-                </div>
+          <div ref={tutorScreenRef} className="tutor-screen" tabIndex={-1} aria-label={`AI tutor step ${tutorStep} of 3`}>
+          <ol className="learning-journey" aria-label="How your AI tutor works">
+            <li aria-current={tutorStep === 1 ? "step" : undefined} className={tutorStep === 1 ? "journey-current" : "journey-done"}><span>1</span> Share your code</li>
+            <li aria-current={tutorStep === 2 ? "step" : undefined} className={tutorStep === 2 ? "journey-current" : tutorStep === 3 ? "journey-done" : ""}><span>2</span> Learn from the error</li>
+            <li aria-current={tutorStep === 3 ? "step" : undefined} className={tutorStep === 3 ? "journey-current" : ""}><span>3</span> Unlock your fix</li>
+          </ol>
+          {fixResult && !fixResult.needsClarification && !lessonUnlocked ? (
+            <div className="tutor-lesson-screen panel">
+              <div className="tutor-lesson-screen-heading">
+                <span className="eyebrow">Step 2 of 3 · Learn from your error</span>
+                <button className="text-button" onClick={clearFixState}>← Back to my code</button>
               </div>
-              <div className="editor-wrap">
-                <PythonEditor value={code} onChange={updateCode} />
+              <ErrorLessonCard lesson={fixResult.lesson} onComplete={() => {
+                setLessonUnlocked(true);
+                startPipCelebration();
+              }} />
+            </div>
+          ) : fixResult && !fixResult.needsClarification && lessonUnlocked ? (
+            <div className="tutor-lesson-screen tutor-fix-screen panel">
+              <div className="tutor-lesson-screen-heading">
+                <span className="eyebrow">Step 3 of 3 · Put your learning into practice</span>
+                <button className="text-button" onClick={clearFixState}>← Back to my code</button>
               </div>
-              <details className="test-case-settings">
-                <summary>Optional function tests</summary>
-                <p>
-                  Provide a JSON array of function calls, each with a functionName and args.
-                </p>
-                <textarea
-                  className="test-case-input"
-                  aria-label="Optional function tests"
-                  value={testCases}
-                  onChange={(event) => setTestCases(event.target.value)}
-                  spellCheck={false}
-                />
-              </details>
-              <div className="editor-actions">
-                <p className="editor-note">
-                  Your code runs locally in your browser.
-                  {isLoadingPython && " Loading the Python runtime…"}
-                </p>
-                <div className="editor-button-group">
-                  <button
-                    className="button button-secondary"
-                    onClick={downloadCode}
-                  >
-                    Download
-                  </button>
-                  {isRunning && (
-                    <button className="button button-stop" onClick={stopRun}>
-                      Stop
-                    </button>
-                  )}
-                  <button
-                    id="run-code-button"
-                    className="button button-run"
-                    onClick={() => void runCode()}
-                    disabled={isRunning}
-                  >
-                    {isRunning ? "Running…" : "▶ Run code"}
-                  </button>
-                </div>
-              </div>
-              <section className="output-panel" aria-labelledby="output-title">
-                <div className="panel-heading output-heading">
-                  <h2 id="output-title">Output</h2>
-                  <span>Console</span>
-                </div>
-                <pre className={`output-content ${runError ? "output-error" : ""}`}>
-                  {[output, runError].filter(Boolean).join("\n\n") ||
-                    "Run your code to see its output."}
-                </pre>
-              </section>
-            </section>
-
-            <aside className="fix-panel panel">
-              <div className="fix-heading">
-                <span className="fix-icon">✳</span>
-                <div>
-                  <p className="eyebrow">Pair programmer</p>
-                  <h2>Fix my code</h2>
-                </div>
-              </div>
-              <p className="fix-description">
-                Your editor contents are included automatically. Describe what you expected,
-                and Gemini will help explain a focused fix.
-              </p>
-              <label className="field-label" htmlFor="intended-behavior">
-                What should this code do? <span className="optional-label">Optional</span>
-              </label>
-              <textarea
-                id="intended-behavior"
-                className="text-field behavior-field"
-                value={intendedBehavior}
-                onChange={(event) => {
-                  setIntendedBehavior(event.target.value);
-                  clearFixState();
-                }}
-                placeholder="For example: calculate and display the average score."
-                maxLength={3000}
-              />
-              <details className="fix-context">
-                <summary>Add an error or example (optional)</summary>
-                <label className="field-label" htmlFor="error-message">
-                  Error message
-                </label>
-                <textarea
-                  id="error-message"
-                  className="text-field"
-                  value={errorMessage || observedError || runError}
-                  onChange={(event) => {
-                    setErrorMessage(event.target.value);
-                    setObservedError("");
-                    clearFixState();
-                  }}
-                  placeholder="A recent Run code error is included automatically."
-                  maxLength={3000}
-                />
-                <label className="field-label field-spaced" htmlFor="example-arguments">
-                  Example function arguments (JSON array)
-                </label>
-                <input
-                  id="example-arguments"
-                  className="text-field"
-                  value={exampleArguments}
-                  onChange={(event) => {
-                    setExampleArguments(event.target.value);
-                    clearFixState();
-                  }}
-                  placeholder='[ [82, 91, 76] ]'
-                />
-                <label className="field-label field-spaced" htmlFor="expected-result">
-                  Expected result (JSON)
-                </label>
-                <input
-                  id="expected-result"
-                  className="text-field"
-                  value={expectedResult}
-                  onChange={(event) => {
-                    setExpectedResult(event.target.value);
-                    clearFixState();
-                  }}
-                  placeholder='"83.0"'
-                />
-              </details>
-              <button
-                className="button button-fix"
-                onClick={requestFix}
-                disabled={isFixing || !code.trim()}
-              >
-                {isFixing ? "Thinking…" : "✳ Help me fix it"}
-              </button>
-              {fixError && (
-                <div className="error-box" role="alert">
-                  <p>{fixError}</p>
-                  <button className="text-button" onClick={requestFix}>
-                    Retry
-                  </button>
-                </div>
-              )}
-              {fixResult?.needsClarification && (
-                <div className="clarification-box">
-                  <p>{fixResult.question}</p>
-                  <label className="field-label" htmlFor="clarification-answer">
-                    Your answer
-                  </label>
-                  <textarea
-                    id="clarification-answer"
-                    className="text-field"
-                    value={clarificationAnswer}
-                    onChange={(event) => setClarificationAnswer(event.target.value)}
-                    maxLength={3000}
-                  />
-                  <button
-                    className="button button-fix"
-                    onClick={answerClarification}
-                    disabled={isFixing || !clarificationAnswer.trim()}
-                  >
-                    {isFixing ? "Thinking…" : "Send answer"}
-                  </button>
-                </div>
-              )}
-              {fixResult && !fixResult.needsClarification && (
-                <section className="fix-result" aria-live="polite">
+              <section className="fix-result tutor-unlocked-result" aria-live="polite">
                   <div className="result-title-row">
-                    <h3>Suggested fix</h3>
+                    <h3>You’ve learned it. Here’s your fix.</h3>
                     <button
                       className="text-button"
-                      onClick={() =>
-                        navigator.clipboard.writeText(fixResult.correctedCode)
-                      }
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(fixResult.correctedCode);
+                          setCopyStatus("copied");
+                        } catch {
+                          setCopyStatus("failed");
+                        }
+                      }}
                     >
-                      Copy corrected code
+                      {copyStatus === "copied" ? "Copied ✓" : "Copy corrected code"}
                     </button>
                   </div>
+                  {copyStatus === "failed" && <p role="status" className="history-message">Copy was blocked by your browser. You can select the code below or apply it to the editor.</p>}
                   <p className="result-summary">{fixResult.summary}</p>
+                  <button className="button button-primary fix-primary-action" onClick={() => updateCode(fixResult.correctedCode)}>Apply fix & return to my code →</button>
                   <pre className="corrected-code">
                     <code>{fixResult.correctedCode}</code>
                   </pre>
@@ -2166,7 +1939,7 @@ export default function Home() {
                     <span className="concept-label">Related bug pattern</span>
                     <p>
                       {getLessonForConcept(fixResult.practiceType)?.title ??
-                        fixResult.practiceType.replaceAll("_", " ")}
+                        fixResult.concept ?? fixResult.lesson.title}
                     </p>
                   </div>
                   {getLessonForConcept(fixResult.practiceType) ? (
@@ -2181,19 +1954,220 @@ export default function Home() {
                     </button>
                   ) : (
                     <p className="practice-unavailable">
-                      Targeted practice is not available for this pattern yet. You can still
-                      use the correction below.
+                      You completed your personalized lesson for this error. Try your corrected code to see what changed.
                     </p>
                   )}
-                  <button
-                    className="button button-primary apply-button"
-                    onClick={() => updateCode(fixResult.correctedCode)}
-                  >
-                    Use corrected code
-                  </button>
+
                 </section>
+            </div>
+          ) : (
+          <div className="workspace-grid">
+            <section className="editor-column panel">
+              <div className="panel-heading">
+                <span className="file-label">main.py</span>
+                <span className="python-badge">Python 3</span>
+                <div className="editor-heading-actions">
+                  <details className="example-picker">
+                    <summary className="button button-secondary example-button">
+                      Try a broken example
+                    </summary>
+                    <div
+                      className="example-picker-options"
+                      role="group"
+                      aria-label="Bug examples"
+                    >
+                      {workspaceExamples.map((example) => (
+                        <button
+                          key={example.label}
+                          type="button"
+                          className="text-button"
+                          onClick={(event) => {
+                            loadWorkspaceExample(example);
+                            event.currentTarget.closest("details")?.removeAttribute("open");
+                          }}
+                        >
+                          <strong>{example.label}</strong><span>{example.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                  <button
+                    className="button button-secondary example-button"
+                    onClick={resetWorkspace}
+                    title="Reset this page's unsaved editor content and results. Persistent My Practice history is unchanged."
+                  >
+                    Reset workspace
+                  </button>
+                </div>
+              </div>
+              {loadedExample && <div className="sample-notice" role="status"><strong>Intentionally broken · {loadedExample.label}</strong><span>Run the code to see the failure, then select “Teach me from this error.”</span></div>}
+              <div className="editor-wrap">
+                <PythonEditor value={code} onChange={updateCode} />
+              </div>
+              <details className="test-case-settings">
+                <summary>Optional function tests</summary>
+                <p>
+                  Provide a JSON array of function calls, each with a functionName and args.
+                </p>
+                <textarea
+                  className="test-case-input"
+                  aria-label="Optional function tests"
+                  value={testCases}
+                  onChange={(event) => setTestCases(event.target.value)}
+                  spellCheck={false}
+                />
+              </details>
+              <div className="editor-actions">
+                <p className="editor-note">
+                  Your code runs locally in your browser.
+                  {isLoadingPython && " Loading the Python runtime…"}
+                </p>
+                <div className="editor-button-group">
+                  <button
+                    className="button button-secondary"
+                    onClick={downloadCode}
+                  >
+                    Download
+                  </button>
+                  {isRunning && (
+                    <button className="button button-stop" onClick={stopRun}>
+                      Stop
+                    </button>
+                  )}
+                  <button
+                    id="run-code-button"
+                    className="button button-run"
+                    onClick={() => void runCode()}
+                    disabled={isRunning}
+                  >
+                    {isRunning ? "Running…" : "▶ Run code"}
+                  </button>
+                </div>
+              </div>
+              <section className="output-panel" aria-labelledby="output-title">
+                <div className="panel-heading output-heading">
+                  <h2 id="output-title">Output</h2>
+                  <span>Console</span>
+                </div>
+                <pre className={`output-content ${runError ? "output-error" : ""}`}>
+                  {[output, runError.split("\n").filter(Boolean).at(-1)].filter(Boolean).join("\n\n") ||
+                    "Run your code to see its output."}
+                </pre>
+                {runError.includes("Traceback") && <details className="traceback-details"><summary>View full error details</summary><pre>{runError}</pre></details>}
+              </section>
+            </section>
+
+            <aside className="fix-panel panel">
+              <div className="fix-heading">
+                <span className="fix-icon">✳</span>
+                <div>
+                  <p className="eyebrow">Learn with Pip</p>
+                  <h2>Help me understand</h2>
+                </div>
+              </div>
+              <p className="fix-description">
+                Tell me what you expected. I’ll help you understand the mistake with a short lesson before we reveal the correction.
+              </p>
+              <label className="field-label" htmlFor="intended-behavior">
+                What should this code do? <span className="optional-label">Optional</span>
+              </label>
+              <textarea
+                id="intended-behavior"
+                className="text-field behavior-field"
+                value={intendedBehavior}
+                onChange={(event) => {
+                  setIntendedBehavior(event.target.value);
+                  clearFixState();
+                }}
+                placeholder="For example: calculate and display the average score."
+                maxLength={3000}
+              />
+              <details className="fix-context">
+                <summary>Add an error or example (optional)</summary>
+                <label className="field-label" htmlFor="error-message">
+                  Error message
+                </label>
+                <textarea
+                  id="error-message"
+                  className="text-field"
+                  value={errorMessage || observedError || runError}
+                  onChange={(event) => {
+                    setErrorMessage(event.target.value);
+                    setObservedError("");
+                    clearFixState();
+                  }}
+                  placeholder="A recent Run code error is included automatically."
+                  maxLength={3000}
+                />
+                <label className="field-label field-spaced" htmlFor="example-arguments">
+                  Example function arguments (JSON array)
+                </label>
+                <input
+                  id="example-arguments"
+                  className="text-field"
+                  value={exampleArguments}
+                  onChange={(event) => {
+                    setExampleArguments(event.target.value);
+                    clearFixState();
+                  }}
+                  placeholder='[ [82, 91, 76] ]'
+                />
+                <label className="field-label field-spaced" htmlFor="expected-result">
+                  Expected result (JSON)
+                </label>
+                <input
+                  id="expected-result"
+                  className="text-field"
+                  value={expectedResult}
+                  onChange={(event) => {
+                    setExpectedResult(event.target.value);
+                    clearFixState();
+                  }}
+                  placeholder='"83.0"'
+                />
+              </details>
+              <button
+                className="button button-fix"
+                onClick={requestFix}
+                disabled={isFixing || !code.trim()}
+              >
+                {isFixing ? "Building your lesson…" : "✳ Teach me from this error"}
+              </button>
+              {fixError && (
+                <div className="error-box" role="alert">
+                  <p>{fixError}</p>
+                  <button className="text-button" onClick={requestFix}>
+                    Retry
+                  </button>
+                </div>
               )}
+              {fixResult?.needsClarification && (
+                <div className="clarification-box">
+                  <p>{fixResult.question}</p>
+                  <label className="field-label" htmlFor="clarification-answer">
+                    Your answer
+                  </label>
+                  <textarea
+                    id="clarification-answer"
+                    className="text-field"
+                    value={clarificationAnswer}
+                    onChange={(event) => setClarificationAnswer(event.target.value)}
+                    maxLength={3000}
+                  />
+                  <button
+                    className="button button-fix"
+                    onClick={answerClarification}
+                    disabled={isFixing || !clarificationAnswer.trim()}
+                  >
+                    {isFixing ? "Thinking…" : "Send answer"}
+                  </button>
+                </div>
+              )}
+
+
             </aside>
+          </div>
+          )}
           </div>
 
         </>
@@ -2216,7 +2190,7 @@ export default function Home() {
           patternTrackingNotice={patternTrackingNotice}
         />
       </section>
-      <footer className="footer">Made for the bugs that teach you something.</footer>
+      <footer className="footer">Understand the mistake. Learn the pattern. Make your second try count.</footer>
     </main>
   );
 }

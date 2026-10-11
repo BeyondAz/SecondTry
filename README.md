@@ -1,6 +1,8 @@
-# Pyspace Python Playground
+# 2ndTry — Learn from your code
 
-Pyspace is a browser-based Python playground. Edit `main.py` with Python
+2ndTry is a learning-first AI Python tutor. Share your code, work through a personalized lesson about its error, and complete understanding checks to unlock the correction.
+
+Edit `main.py` with Python
 syntax highlighting and run it locally in an isolated Pyodide worker. Optional
 function tests accept JSON-compatible values; for example, with
 `def add(a, b): return a + b`, enter:
@@ -12,7 +14,7 @@ function tests accept JSON-compatible values; for example, with
 Runs can be stopped and have a five-second execution limit. Captured output is
 capped to keep large prints from overwhelming the page.
 
-The **Fix my code** action uses the server-side `/api/fix` Gemini endpoint.
+The **Teach me from this error** action uses the server-side `/api/fix` Gemini endpoint.
 Set `GEMINI_API_KEY` in the server environment before starting or deploying the
 app; the key is never sent to the browser. The current editor code and recent
 Python output or traceback are included automatically. You may optionally add
@@ -56,7 +58,7 @@ practice and are not tamper-proof assessments.
 ## Fix pattern tracking
 
 After a valid `/api/fix` response assigns a correction to one of the three
-practice patterns, Pyspace saves that category in this browser's local storage.
+practice patterns, 2ndTry saves that category in this browser's local storage.
 It stores no code or error text and keeps only the latest 50 classified fixes.
 Fix patterns are separate from server-backed practice history, are not
 synchronized across browsers or devices, and are AI classifications rather than
