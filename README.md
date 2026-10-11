@@ -57,9 +57,11 @@ practice and are not tamper-proof assessments.
 
 ## Fix pattern tracking
 
-After a valid `/api/fix` response assigns a correction to one of the three
-practice patterns, 2ndTry saves that category in this browser's local storage.
-It stores no code or error text and keeps only the latest 50 classified fixes.
+After a valid `/api/fix` correction response, 2ndTry saves its category in this
+browser's local storage, including "other" for fixes outside the three guided
+practice patterns. My Practice counts every saved correction; only the three
+guided patterns have practice links. It stores no code or error text and keeps
+only the latest 50 classified fixes.
 Fix patterns are separate from server-backed practice history, are not
 synchronized across browsers or devices, and are AI classifications rather than
 verified diagnoses. Clearing this browser's site data removes the saved

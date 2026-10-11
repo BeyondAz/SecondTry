@@ -1,16 +1,17 @@
-import type { PracticeConcept } from "./practice-recommendations.ts";
+import type { MistakePattern } from "./practice-recommendations.ts";
 
 export const MISTAKE_PATTERN_STORAGE_KEY = "pyspace.fix-patterns.v1";
 export const MAX_MISTAKE_PATTERN_EVENTS = 50;
 
-const practiceConcepts: ReadonlySet<string> = new Set<PracticeConcept>([
+const practiceConcepts: ReadonlySet<string> = new Set<MistakePattern>([
   "accumulator",
   "early_return",
   "off_by_one",
+  "other",
 ]);
 
 export type ParsedMistakePatternEvents = {
-  events: PracticeConcept[];
+  events: MistakePattern[];
   malformed: boolean;
 };
 
@@ -29,7 +30,7 @@ export function parseMistakePatternEvents(
       !("events" in value) ||
       !Array.isArray(value.events) ||
       !value.events.every(
-        (event): event is PracticeConcept =>
+        (event): event is MistakePattern =>
           typeof event === "string" &&
           practiceConcepts.has(event),
       )
@@ -47,14 +48,14 @@ export function parseMistakePatternEvents(
 }
 
 export function appendMistakePatternEvent(
-  events: readonly PracticeConcept[],
-  concept: PracticeConcept,
-): PracticeConcept[] {
+  events: readonly MistakePattern[],
+  concept: MistakePattern,
+): MistakePattern[] {
   return [...events, concept].slice(-MAX_MISTAKE_PATTERN_EVENTS);
 }
 
 export function serializeMistakePatternEvents(
-  events: readonly PracticeConcept[],
+  events: readonly MistakePattern[],
 ): string {
   return JSON.stringify({
     version: 1,

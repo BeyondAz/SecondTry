@@ -7,6 +7,7 @@ import type {
   PracticeOutcome,
   PracticeAttemptType,
   PracticeConcept,
+  MistakePattern,
 } from "@/lib/practice-recommendations";
 import { getCommonMistakePatterns } from "@/lib/practice-recommendations";
 import type { PracticeSessionStatus } from "@/lib/practice-client";
@@ -86,7 +87,7 @@ export default function MyPractice({
   onRecommendationChange: (
     recommendation: PracticeRecommendation | null,
   ) => void;
-  mistakePatternEvents: readonly PracticeConcept[];
+  mistakePatternEvents: readonly MistakePattern[];
   patternTrackingStatus: "loading" | "ready" | "unavailable";
   patternTrackingNotice: string;
 }) {
@@ -197,17 +198,20 @@ export default function MyPractice({
         ) : (
           <ul className="common-pattern-list">
             {commonPatterns.map((pattern) => {
-              const lesson = getLessonForConcept(pattern.concept);
+              const concept = pattern.concept;
+              const lesson = concept === "other" ? null : getLessonForConcept(concept);
+              const title = lesson?.title ?? "Other corrections";
+              const exerciseId = pattern.guidedExerciseId;
               return (
                 <li className="common-pattern" key={pattern.concept}>
                   <div className="common-pattern-copy">
-                    <strong>{lesson?.title ?? pattern.concept}</strong>
-                    <span>{lesson?.explanation}</span>
+                    <strong>{title}</strong>
+                    <span>{lesson?.explanation ?? "Syntax, naming, types, and other fixes outside the guided practice patterns."}</span>
                     <progress
                       className="pattern-meter"
                       value={pattern.fixCount}
                       max={maxPatternCount}
-                      aria-label={`${lesson?.title ?? pattern.concept} fix pattern frequency`}
+                      aria-label={`${title} fix pattern frequency`}
                       aria-valuetext={`${pattern.fixCount} of ${mistakePatternEvents.length} recent classified corrections`}
                     />
                     <small>
@@ -217,19 +221,19 @@ export default function MyPractice({
                         : "classified corrections"}
                     </small>
                   </div>
-                  <button
+                  {concept !== "other" && exerciseId && <button
                     className="button button-secondary common-pattern-action"
                     onClick={() =>
                       onOpenRecommendation({
-                        concept: pattern.concept,
-                        exerciseId: pattern.guidedExerciseId,
+                        concept,
+                        exerciseId,
                         attemptType: "guided",
                         reason: "Practice this pattern with a guided exercise.",
                       })
                     }
                   >
                     Practice this pattern
-                  </button>
+                  </button>}
                 </li>
               );
             })}
@@ -238,8 +242,8 @@ export default function MyPractice({
       </section>
       <p className="practice-data-note">
         Patterns are AI-classified from Playground corrections and stored in
-        this browser only. The latest 50 classifications are used; unclassified
-        fixes are not counted.
+        this browser only. The latest 50 corrections are counted, including
+        other corrections outside the guided practice patterns.
       </p>
 
       {sessionStatus === "loading" && (

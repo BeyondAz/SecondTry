@@ -279,6 +279,20 @@ test("common mistake pattern ties follow the stable concept order", () => {
   );
 });
 
+test("corrections outside guided patterns survive storage and appear in frequency metrics", () => {
+  const events = appendMistakePatternEvent(["accumulator", "other"], "other");
+  const parsed = parseMistakePatternEvents(serializeMistakePatternEvents(events));
+  assert.equal(parsed.malformed, false);
+  assert.deepEqual(parsed.events, events);
+  assert.deepEqual(getCommonMistakePatterns(parsed.events, exercises), [
+    { concept: "other", fixCount: 2, guidedExerciseId: null },
+    { concept: "accumulator", fixCount: 1, guidedExerciseId: "sum-numbers" },
+  ]);
+  assert.deepEqual(getCommonMistakePatterns(["other"], exercises), [
+    { concept: "other", fixCount: 1, guidedExerciseId: null },
+  ]);
+});
+
 test("local mistake history accepts versioned data and safely bounds stored events", () => {
   const events: ("accumulator" | "off_by_one")[] = Array.from(
     { length: MAX_MISTAKE_PATTERN_EVENTS + 3 },

@@ -35,7 +35,7 @@ import {
   serializeMistakePatternEvents,
 } from "@/lib/mistake-pattern-storage";
 import type {
-  PracticeConcept,
+  MistakePattern,
   PracticeRecommendation,
 } from "@/lib/practice-recommendations";
 
@@ -753,7 +753,7 @@ export default function Home() {
     PendingPracticeSave[]
   >([]);
   const [mistakePatternEvents, setMistakePatternEvents] = useState<
-    PracticeConcept[]
+    MistakePattern[]
   >([]);
   const [patternTrackingStatus, setPatternTrackingStatus] = useState<
     "loading" | "ready" | "unavailable"
@@ -761,7 +761,7 @@ export default function Home() {
   const [patternTrackingNotice, setPatternTrackingNotice] = useState("");
   const [historyRefreshVersion, setHistoryRefreshVersion] = useState(0);
   const practiceSessionIdRef = useRef<string | null>(null);
-  const mistakePatternEventsRef = useRef<PracticeConcept[]>([]);
+  const mistakePatternEventsRef = useRef<MistakePattern[]>([]);
   const pendingPracticeSavesRef = useRef(
     new Map<string, PendingPracticeSave>(),
   );
@@ -818,7 +818,7 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  function recordMistakePattern(concept: PracticeConcept) {
+  function recordMistakePattern(concept: MistakePattern) {
     const nextEvents = appendMistakePatternEvent(
       mistakePatternEventsRef.current,
       concept,
@@ -1172,10 +1172,7 @@ export default function Home() {
         setFixError("The AI returned an incomplete lesson. Please retry.");
         return;
       }
-      if (
-        !result.data.needsClarification &&
-        result.data.practiceType !== "other"
-      ) {
+      if (!result.data.needsClarification) {
         recordMistakePattern(result.data.practiceType);
       }
       if (!result.data.needsClarification) setOriginalFixCode(values.code);
