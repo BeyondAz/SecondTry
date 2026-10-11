@@ -116,6 +116,9 @@ the app displays a notice.
 The server identifies learners with a random HttpOnly, SameSite=Lax cookie that
 expires after 90 days. Only a SHA-256 hash of its token is stored. Clearing
 cookies creates a new learner; it does not delete the old database history.
+If a well-formed learner cookie no longer exists in the connected database
+(for example after switching services), session initialization rotates it and
+creates a fresh anonymous learner automatically.
 Practice history excludes code, test arguments, output, exceptions, and
 predictions. AI tutoring sends submitted code and supplied context to Gemini;
 narration sends explanation text to ElevenLabs.

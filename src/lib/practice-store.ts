@@ -121,8 +121,9 @@ export async function createLearnerSession(request: Request) {
     throw new PracticeDatabaseUnavailableError();
   }
 
-  const token = parsedCookie.token ?? randomBytes(32).toString("base64url");
-  const tokenHash = createHash("sha256").update(token).digest("hex");
+  let token = parsedCookie.token ?? randomBytes(32).toString("base64url");
+  let tokenHash = createHash("sha256").update(token).digest("hex");
+  let cookieToken = parsedCookie.token ? null : token;
   const sessionId = randomUUID();
   const learnerId = randomUUID();
 
@@ -136,10 +137,15 @@ export async function createLearnerSession(request: Request) {
         [tokenHash],
       );
       resolvedLearnerId = learner.rows[0]?.learner_id;
-      if (!resolvedLearnerId) {
-        throw new PracticeRequestError("The learner cookie is invalid.", 400);
+    }
+    if (!resolvedLearnerId) {
+      // A service switch or removed learner can leave a well-formed stale cookie.
+      // Rotate it rather than reusing a client-supplied token for a new learner.
+      if (parsedCookie.token) {
+        token = randomBytes(32).toString("base64url");
+        tokenHash = createHash("sha256").update(token).digest("hex");
+        cookieToken = token;
       }
-    } else {
       const learner = await client.query<{ learner_id: string }>(
         `INSERT INTO second_try.learners (learner_id, credential_hash)
          VALUES ($1, $2)
@@ -162,7 +168,7 @@ export async function createLearnerSession(request: Request) {
   return {
     sessionId,
     learnerId: created,
-    cookieToken: parsedCookie.token ? null : token,
+    cookieToken,
   };
 }
 

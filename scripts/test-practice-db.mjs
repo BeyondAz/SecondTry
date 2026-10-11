@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 
 const baseUrl = process.env.PRACTICE_TEST_BASE_URL ?? "http://localhost:3000";
 const origin = new URL(baseUrl).origin;
@@ -63,6 +64,25 @@ async function save(cookie, payload, expectedStatus = 200) {
   );
   return data;
 }
+
+const staleCookie = `second_try_learner=${randomBytes(32).toString("base64url")}`;
+const recovered = await send("/api/practice/session", {
+  method: "POST",
+  cookie: staleCookie,
+});
+assert.equal(recovered.response.status, 200, "a stale learner cookie should recover");
+const replacementCookie = recovered.response.headers.getSetCookie().find((value) =>
+  value.startsWith("second_try_learner="),
+);
+assert.ok(replacementCookie, "recovery must issue a fresh learner cookie");
+const recoveredCookie = replacementCookie.split(";", 1)[0];
+assert.notEqual(recoveredCookie, staleCookie, "unknown tokens must be rotated");
+const recoveredHistory = await send("/api/practice/history", { cookie: recoveredCookie });
+assert.equal(recoveredHistory.response.status, 200);
+assert.equal(recoveredHistory.data.attempts.length, 0);
+const resumed = await send("/api/practice/session", { method: "POST", cookie: recoveredCookie });
+assert.equal(resumed.response.status, 200);
+assert.equal(resumed.response.headers.getSetCookie().length, 0, "known learners keep their cookie");
 
 const owner = await createLearner();
 const otherOwner = await createLearner();
